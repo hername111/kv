@@ -466,7 +466,7 @@ pub enum KvError {
 
 ## 9. 构建阶段（垂直切片）
 
-### 阶段 1：最小可用原型（Month 1-2）
+### 阶段 1：最小可用原型（Day 1-3）
 
 ```
 [两人协作] kv-common (types + traits)
@@ -475,7 +475,7 @@ pub enum KvError {
 [集成] 命令行 REPL：输入 SQL → 打印 AST
 ```
 
-### 阶段 2：内存数据库（Month 3-4）
+### 阶段 2：内存数据库（Day 4-6）
 
 ```
 [A] 查询执行器：SeqScan + Filter + Sort
@@ -484,7 +484,7 @@ pub enum KvError {
 [集成] 可以用 mysql CLI 连接，执行 CRUD
 ```
 
-### 阶段 3：事务（Month 5-7）
+### 阶段 3：事务（Day 7-9）
 
 ```
 [B] MVCC 版本链 + 事务管理器
@@ -493,7 +493,7 @@ pub enum KvError {
 [集成] ACID 保证 + 并发测试
 ```
 
-### 阶段 4：查询增强（Month 8-10）
+### 阶段 4：查询增强（Day 10-12）
 
 ```
 [A] 索引扫描 + 简单 JOIN
@@ -502,7 +502,7 @@ pub enum KvError {
 [集成] 性能基准测试
 ```
 
-### 阶段 5：完善（Month 10-12）
+### 阶段 5：完善（Day 13-14）
 
 ```
 [A] 完整 DDL 支持

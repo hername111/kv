@@ -51,11 +51,11 @@
 
 | 阶段 | 时间 | 内容 |
 |------|------|------|
-| ① 最小原型 | Month 1-2 | kv-common, SQL Parser, Page Manager + B+Tree |
-| ② 内存数据库 | Month 3-4 | 查询执行, MySQL Wire Protocol, 持久化 |
-| ③ 事务 | Month 5-7 | MVCC, 锁管理, ACID 保证 |
-| ④ 查询增强 | Month 8-10 | 索引扫描, JOIN, 查询优化 |
-| ⑤ 完善 | Month 10-12 | WAL, 完整 DDL, 性能测试 |
+| ① 最小原型 | Day 1-3 | kv-common, SQL Parser, Page Manager + B+Tree |
+| ② 内存数据库 | Day 4-6 | 查询执行, MySQL Wire Protocol, 持久化 |
+| ③ 事务 | Day 7-9 | MVCC, 锁管理, ACID 保证 |
+| ④ 查询增强 | Day 10-12 | 索引扫描, JOIN, 查询优化 |
+| ⑤ 完善 | Day 13-14 | WAL, 完整 DDL, 性能测试 |
 
 ---
 
