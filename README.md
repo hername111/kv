@@ -1,27 +1,27 @@
 # KV
 
-> Rust で実装する MySQL 風リレーショナルデータベース — 学習用
+> 用 Rust 从零实现 MySQL 风格的关系型数据库 — 学习项目
 
 [![Rust](https://img.shields.io/badge/rust-1.94+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
 
-## 概要
+## 概述
 
-SQL 解析、B+Tree ストレージエンジン、MVCC トランザクション、MySQL ワイヤープロトコルを Rust でゼロから実装する学習プロジェクト。`mysql` CLI から接続して SQL を実行できます。
+一个学习型数据库项目，涵盖 SQL 解析、B+Tree 存储引擎、MVCC 事务、MySQL 网络协议。可用 `mysql` CLI 直接连接并执行 SQL。
 
-### 目標機能
+### 目标功能
 
-- SQL の解析と実行（SELECT / INSERT / UPDATE / DELETE / JOIN / ORDER BY）
-- ディスクベースのストレージエンジン（B+Tree + バッファプール）
-- プライマリキーインデックス + セカンダリインデックス
-- ACID トランザクション（MVCC + ロックマネージャ）
-- MySQL ワイヤープロトコル互換（`mysql` CLI 接続可能）
+- SQL 解析与执行（SELECT / INSERT / UPDATE / DELETE / JOIN / ORDER BY）
+- 磁盘存储引擎（B+Tree + 缓冲池）
+- 主键索引 + 二级索引
+- ACID 事务（MVCC + 锁管理）
+- MySQL Wire Protocol 兼容（`mysql` CLI 可连接）
 
 ---
 
-## アーキテクチャ
+## 架构
 
 ```
                  Client (mysql CLI)
@@ -43,92 +43,92 @@ SQL 解析、B+Tree ストレージエンジン、MVCC トランザクション�
 └────────────────────────────────────────────────────┘
 ```
 
-各層は `trait` で分離されており、独立して開発・テストが可能です。詳細は [設計ドキュメント](docs/superpowers/specs/2026-05-22-kv-database-design.md) を参照してください。
+各层通过 `trait` 解耦，可独立开发与测试。详见[设计文档](docs/superpowers/specs/2026-05-22-kv-database-design.md)。
 
 ---
 
-## 開発ロードマップ
+## 开发路线
 
-| フェーズ | 期間 | 内容 |
-|---------|------|------|
-| ① 最小プロトタイプ | Month 1-2 | kv-common, SQL Parser, Page Manager + B+Tree |
-| ② インメモリ DB | Month 3-4 | クエリ実行, MySQL Wire Protocol, 永続化 |
-| ③ トランザクション | Month 5-7 | MVCC, ロック管理, ACID 保証 |
-| ④ クエリ強化 | Month 8-10 | インデックススキャン, JOIN, クエリ最適化 |
-| ⑤ 完成度向上 | Month 10-12 | WAL, DDL 完全対応, パフォーマンステスト |
+| 阶段 | 时间 | 内容 |
+|------|------|------|
+| ① 最小原型 | Month 1-2 | kv-common, SQL Parser, Page Manager + B+Tree |
+| ② 内存数据库 | Month 3-4 | 查询执行, MySQL Wire Protocol, 持久化 |
+| ③ 事务 | Month 5-7 | MVCC, 锁管理, ACID 保证 |
+| ④ 查询增强 | Month 8-10 | 索引扫描, JOIN, 查询优化 |
+| ⑤ 完善 | Month 10-12 | WAL, 完整 DDL, 性能测试 |
 
 ---
 
-## プロジェクト構成
+## 项目结构
 
 ```
 kv/
 ├── crates/
-│   ├── kv-common/      # 共有型定義 + コア trait
-│   ├── kv-storage/     # B+Tree / ページ管理 / バッファプール
-│   ├── kv-sql/         # 字句解析 / 構文解析 / クエリ実行
-│   ├── kv-txn/         # MVCC / ロック / トランザクション管理
-│   ├── kv-network/     # TCP サーバー / MySQL プロトコル
-│   └── kv-server/      # 全モジュール統合バイナリ
-├── tests/              # 統合テスト
-└── docs/               # 設計ドキュメント
+│   ├── kv-common/      # 共享类型 + 核心 trait
+│   ├── kv-storage/     # B+Tree / 页管理 / 缓冲池
+│   ├── kv-sql/         # 词法分析 / 语法分析 / 查询执行
+│   ├── kv-txn/         # MVCC / 锁 / 事务管理
+│   ├── kv-network/     # TCP 服务器 / MySQL 协议
+│   └── kv-server/      # 集成二进制
+├── tests/              # 集成测试
+└── docs/               # 设计文档
 ```
 
 ---
 
-## クイックスタート
+## 快速开始
 
-### 必要環境
+### 环境要求
 
 - Rust 1.94+
-- MySQL クライアント（動作確認用）
+- MySQL 客户端（验证用）
 
-### ビルドと実行
+### 构建与运行
 
 ```bash
-# 全 crate ビルド
+# 构建所有 crate
 cargo build --workspace
 
-# サーバー起動
+# 启动服务
 cargo run -p kv-server
 
-# 別ターミナルから接続
+# 另开终端连接
 mysql -h 127.0.0.1 -P 3306 -u root
 ```
 
-### テスト
+### 测试
 
 ```bash
-# 全テスト実行
+# 运行全部测试
 cargo test --workspace
 
-# リントチェック
+# Lint 检查
 cargo clippy --workspace
 
-# フォーマットチェック
+# 格式检查
 cargo fmt --check --all
 ```
 
 ---
 
-## 協業ガイド（2 名）
+## 协作指南（两人）
 
-| 担当 | クレート | 担当領域 |
-|------|---------|---------|
-| **A** | kv-sql, kv-network, kv-server | SQL 処理系 / ネットワーク / 統合 |
-| **B** | kv-storage, kv-txn | ストレージ / トランザクション |
+| 角色 | 负责 crate | 领域 |
+|------|-----------|------|
+| **A** | kv-sql, kv-network, kv-server | SQL 处理 / 网络 / 集成 |
+| **B** | kv-storage, kv-txn | 存储 / 事务 |
 
-### 開発ルール
+### 开发规则
 
-1. **`kv-common/src/traits.rs` が契約** — 変更は両者 approve 必須
-2. **Mock 先行** — 相手の実装を待たず、Mock で開発を進める
-3. **PR マージ前に CI 通過必須** — `cargo test --workspace` + `clippy` + `fmt`
-4. **統合テストは両者で書く** — インターフェースの結合確認は二人作業
+1. **`kv-common/src/traits.rs` 是接口合同** — 变更需两人 approve
+2. **Mock 先行** — 不等对方，用 Mock 实现独立开发
+3. **PR 合并前 CI 必过** — `cargo test --workspace` + `clippy` + `fmt`
+4. **集成测试共同编写** — 接口对接时两人一起验证
 
-詳細は [設計ドキュメント §5](docs/superpowers/specs/2026-05-22-kv-database-design.md#5-双人协作方案) を参照。
+详见[设计文档 §5](docs/superpowers/specs/2026-05-22-kv-database-design.md#5-双人协作方案)。
 
 ---
 
-## ライセンス
+## 许可
 
 MIT
