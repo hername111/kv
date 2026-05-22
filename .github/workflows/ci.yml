@@ -16,7 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
-      - run: cargo fmt --check --all
-      - run: cargo clippy --workspace -- -D warnings
-      - run: cargo test --workspace
+          toolchain: stable
+          components: clippy rustfmt
+            - run: cargo fmt --check --all
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace --all-targets
