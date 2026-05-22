@@ -1,0 +1,13 @@
+[package]
+name = "kv-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kv-common = { path = "../kv-common" }
+kv-storage = { path = "../kv-storage" }
+kv-sql = { path = "../kv-sql" }
+kv-txn = { path = "../kv-txn" }
+kv-network = { path = "../kv-network" }
+tokio.workspace = true

@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kv-common",
+    "crates/kv-storage",
+    "crates/kv-sql",
+    "crates/kv-txn",
+    "crates/kv-network",
+    "crates/kv-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+bytes = "1"
+nom = "8"
+serde = { version = "1", features = ["derive"] }
+async-trait = "0.1"
+
+criterion = "0.5"
+tempfile = "3"
+proptest = "1"

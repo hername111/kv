@@ -1,0 +1,10 @@
+[package]
+name = "kv-txn"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kv-common = { path = "../kv-common" }
+kv-storage = { path = "../kv-storage" }
+async-trait.workspace = true

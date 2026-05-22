@@ -1,0 +1,11 @@
+[package]
+name = "kv-network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kv-common = { path = "../kv-common" }
+tokio = { workspace = true, features = ["net", "io-util"] }
+bytes.workspace = true
+async-trait.workspace = true
