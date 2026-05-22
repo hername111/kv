@@ -18,6 +18,6 @@ jobs:
         with:
           toolchain: stable
           components: clippy rustfmt
-            - run: cargo fmt --check --all
+      - run: cargo fmt --check --all
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --all-targets
