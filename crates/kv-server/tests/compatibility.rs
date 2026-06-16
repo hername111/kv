@@ -1,5 +1,5 @@
 use kv_network::KvServer;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 #[tokio::test]
 async fn test_server_startup() {
@@ -10,11 +10,11 @@ async fn test_server_startup() {
 
 #[tokio::test]
 async fn test_server_with_handler() {
-    use std::sync::Arc;
+    use async_trait::async_trait;
+    use kv_common::error::KvResult;
     use kv_common::traits::CommandHandler;
     use kv_common::types::{ResultSet, Session};
-    use kv_common::error::KvResult;
-    use async_trait::async_trait;
+    use std::sync::Arc;
 
     struct DummyHandler;
     #[async_trait]

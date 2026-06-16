@@ -1,9 +1,9 @@
 // B+Tree (ORDER=4)：基于 Pager trait 的持久化 B+树索引
+use async_trait::async_trait;
 use kv_common::error::KvResult;
 use kv_common::traits::Pager;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use async_trait::async_trait;
 
 const ORDER: usize = 4;
 const MAX_KEYS: usize = ORDER - 1;
@@ -46,19 +46,19 @@ fn decode_leaf_entry(data: &[u8]) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, u64) {
     let mut pos = 3;
     let mut keys = Vec::with_capacity(num_keys);
     for _ in 0..num_keys {
-        let len = u16::from_le_bytes(data[pos..pos+2].try_into().unwrap()) as usize;
+        let len = u16::from_le_bytes(data[pos..pos + 2].try_into().unwrap()) as usize;
         pos += 2;
-        keys.push(data[pos..pos+len].to_vec());
+        keys.push(data[pos..pos + len].to_vec());
         pos += len;
     }
     let mut values = Vec::with_capacity(num_keys);
     for _ in 0..num_keys {
-        let len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize;
+        let len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
         pos += 4;
-        values.push(data[pos..pos+len].to_vec());
+        values.push(data[pos..pos + len].to_vec());
         pos += len;
     }
-    let next = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
+    let next = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
     (keys, values, next)
 }
 
@@ -67,21 +67,23 @@ fn decode_internal_entry(data: &[u8]) -> (Vec<Vec<u8>>, Vec<u64>) {
     let mut pos = 3;
     let mut keys = Vec::with_capacity(num_keys);
     for _ in 0..num_keys {
-        let len = u16::from_le_bytes(data[pos..pos+2].try_into().unwrap()) as usize;
+        let len = u16::from_le_bytes(data[pos..pos + 2].try_into().unwrap()) as usize;
         pos += 2;
-        keys.push(data[pos..pos+len].to_vec());
+        keys.push(data[pos..pos + len].to_vec());
         pos += len;
     }
     let mut children = Vec::with_capacity(num_keys + 1);
     for _ in 0..=num_keys {
-        children.push(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()));
+        children.push(u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap()));
         pos += 8;
     }
     (keys, children)
 }
 
 fn find_key_index(keys: &[Vec<u8>], target: &[u8]) -> usize {
-    keys.iter().position(|k| target < k.as_slice()).unwrap_or(keys.len())
+    keys.iter()
+        .position(|k| target < k.as_slice())
+        .unwrap_or(keys.len())
 }
 
 pub struct BPlusTree {
@@ -94,13 +96,22 @@ impl BPlusTree {
         let root_page_id = pager.allocate_page().await?;
         let leaf = encode_leaf_node(&[], &[], 0);
         pager.write_page(root_page_id, &leaf).await?;
-        Ok(BPlusTree { pager, root_page_id: AtomicU64::new(root_page_id) })
+        Ok(BPlusTree {
+            pager,
+            root_page_id: AtomicU64::new(root_page_id),
+        })
     }
 
     pub async fn insert(&self, key: &[u8], value: &[u8]) -> KvResult<()> {
-        let result = self.insert_recursive(self.root_page_id.load(Ordering::Relaxed), key, value).await?;
+        let result = self
+            .insert_recursive(self.root_page_id.load(Ordering::Relaxed), key, value)
+            .await?;
         if let (Some(promo_key), Some(new_child)) = result {
-            let new_root = encode_internal_node(0, &[promo_key], &[self.root_page_id.load(Ordering::Relaxed), new_child]);
+            let new_root = encode_internal_node(
+                0,
+                &[promo_key],
+                &[self.root_page_id.load(Ordering::Relaxed), new_child],
+            );
             let new_root_id = self.pager.allocate_page().await?;
             self.pager.write_page(new_root_id, &new_root).await?;
             self.root_page_id.store(new_root_id, Ordering::Relaxed);
@@ -152,9 +163,8 @@ impl BPlusTree {
             let child_idx = find_key_index(&keys, key);
             let child_page = children[child_idx];
 
-            let (maybe_promo, maybe_new_child) = Box::pin(
-                self.insert_recursive(child_page, key, value)
-            ).await?;
+            let (maybe_promo, maybe_new_child) =
+                Box::pin(self.insert_recursive(child_page, key, value)).await?;
 
             match (maybe_promo, maybe_new_child) {
                 (Some(promo_key), Some(new_child_id)) => {
@@ -194,7 +204,10 @@ impl BPlusTree {
             let data = self.pager.read_page(page_id).await?;
             if data[0] == FLAG_LEAF {
                 let (keys, values, _) = decode_leaf_entry(&data);
-                return Ok(keys.iter().position(|k| k == key).map(|i| values[i].clone()));
+                return Ok(keys
+                    .iter()
+                    .position(|k| k == key)
+                    .map(|i| values[i].clone()));
             }
             let (keys, children) = decode_internal_entry(&data);
             page_id = children[find_key_index(&keys, key)];
@@ -205,7 +218,9 @@ impl BPlusTree {
         let mut page_id = self.root_page_id.load(Ordering::Relaxed);
         loop {
             let data = self.pager.read_page(page_id).await?;
-            if data[0] == FLAG_LEAF { break; }
+            if data[0] == FLAG_LEAF {
+                break;
+            }
             let (keys, children) = decode_internal_entry(&data);
             page_id = children[find_key_index(&keys, start)];
         }
@@ -216,23 +231,36 @@ impl BPlusTree {
             let data = self.pager.read_page(current_id).await?;
             let (keys, values, next) = decode_leaf_entry(&data);
             for (k, v) in keys.iter().zip(values.iter()) {
-                if k.as_slice() < start { continue; }
-                if k.as_slice() >= end { return Ok(results); }
+                if k.as_slice() < start {
+                    continue;
+                }
+                if k.as_slice() >= end {
+                    return Ok(results);
+                }
                 results.push((k.clone(), v.clone()));
             }
-            if next == 0 { break; }
+            if next == 0 {
+                break;
+            }
             current_id = next;
         }
         Ok(results)
     }
 
     pub async fn delete(&self, key: &[u8]) -> KvResult<bool> {
-        let found = self.delete_recursive(self.root_page_id.load(Ordering::Relaxed), key).await?;
-        let data = self.pager.read_page(self.root_page_id.load(Ordering::Relaxed)).await?;
+        let found = self
+            .delete_recursive(self.root_page_id.load(Ordering::Relaxed), key)
+            .await?;
+        let data = self
+            .pager
+            .read_page(self.root_page_id.load(Ordering::Relaxed))
+            .await?;
         if data[0] == FLAG_INTERNAL {
             let (keys, children) = decode_internal_entry(&data);
             if keys.is_empty() && !children.is_empty() {
-                self.pager.free_page(self.root_page_id.load(Ordering::Relaxed)).await?;
+                self.pager
+                    .free_page(self.root_page_id.load(Ordering::Relaxed))
+                    .await?;
                 self.root_page_id.store(children[0], Ordering::Relaxed);
             }
         }
@@ -272,7 +300,10 @@ mod tests {
 
     impl MemPager {
         fn new() -> Self {
-            MemPager { pages: Mutex::new(HashMap::new()), counter: Mutex::new(1) }
+            MemPager {
+                pages: Mutex::new(HashMap::new()),
+                counter: Mutex::new(1),
+            }
         }
     }
 
@@ -280,7 +311,10 @@ mod tests {
     impl Pager for MemPager {
         async fn read_page(&self, page_id: u64) -> KvResult<Vec<u8>> {
             let pages = self.pages.lock().unwrap();
-            Ok(pages.get(&page_id).cloned().unwrap_or_else(|| vec![0u8; 4096]))
+            Ok(pages
+                .get(&page_id)
+                .cloned()
+                .unwrap_or_else(|| vec![0u8; 4096]))
         }
 
         async fn write_page(&self, page_id: u64, data: &[u8]) -> KvResult<()> {
@@ -303,7 +337,9 @@ mod tests {
             Ok(())
         }
 
-        async fn flush(&self) -> KvResult<()> { Ok(()) }
+        async fn flush(&self) -> KvResult<()> {
+            Ok(())
+        }
     }
 
     async fn make_tree() -> BPlusTree {

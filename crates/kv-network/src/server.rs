@@ -1,10 +1,10 @@
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use crate::protocol;
 use bytes::BytesMut;
-use std::sync::Arc;
 use kv_common::traits::CommandHandler;
 use kv_common::types::Session;
-use crate::protocol;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 pub struct KvServer {
     pub addr: String,
@@ -13,7 +13,10 @@ pub struct KvServer {
 
 impl KvServer {
     pub fn new(addr: String) -> Self {
-        KvServer { addr, handler: None }
+        KvServer {
+            addr,
+            handler: None,
+        }
     }
 
     pub fn with_handler(mut self, handler: Arc<dyn CommandHandler>) -> Self {
@@ -46,7 +49,9 @@ async fn handle_client(
 
     let mut buf = BytesMut::with_capacity(4096);
     let n = socket.read_buf(&mut buf).await?;
-    if n == 0 { return Ok(()); }
+    if n == 0 {
+        return Ok(());
+    }
 
     let ok = protocol::make_ok_packet(0, 0, 2);
     socket.write_all(&ok).await?;
@@ -56,10 +61,14 @@ async fn handle_client(
     loop {
         buf.clear();
         let n = socket.read_buf(&mut buf).await?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
 
         if let Some(payload) = protocol::read_packet(&mut buf).unwrap_or(None) {
-            if payload.is_empty() { continue; }
+            if payload.is_empty() {
+                continue;
+            }
             let cmd = payload[0];
             match cmd {
                 0x03 => {
@@ -94,7 +103,7 @@ async fn handle_client(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     #[tokio::test]
     async fn test_server_startup() {

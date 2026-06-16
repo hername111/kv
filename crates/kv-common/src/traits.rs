@@ -1,8 +1,6 @@
 // 核心 trait 定义：StorageEngine, CommandHandler, TxnContext, Pager
 use crate::error::KvResult;
-use crate::types::{
-    ColumnId, IndexId, IsolationLevel, ResultSet, Session, TableId,
-};
+use crate::types::{ColumnId, IndexId, IsolationLevel, ResultSet, Session, TableId};
 use async_trait::async_trait;
 
 /// 存储引擎抽象 — SQL 层和事务层依赖此 trait 访问数据
@@ -12,21 +10,10 @@ pub trait StorageEngine: Send + Sync {
     async fn create_table(&self, table_name: &str) -> KvResult<TableId>;
 
     /// 插入或更新一行
-    async fn put(
-        &self,
-        table_id: TableId,
-        key: &[u8],
-        value: &[u8],
-        txn_id: u64,
-    ) -> KvResult<u64>;
+    async fn put(&self, table_id: TableId, key: &[u8], value: &[u8], txn_id: u64) -> KvResult<u64>;
 
     /// 读取指定版本的可见数据
-    async fn get(
-        &self,
-        table_id: TableId,
-        key: &[u8],
-        txn_id: u64,
-    ) -> KvResult<Option<Vec<u8>>>;
+    async fn get(&self, table_id: TableId, key: &[u8], txn_id: u64) -> KvResult<Option<Vec<u8>>>;
 
     /// 范围扫描
     async fn scan(
@@ -38,19 +25,10 @@ pub trait StorageEngine: Send + Sync {
     ) -> KvResult<Vec<(Vec<u8>, Vec<u8>)>>;
 
     /// 标记删除
-    async fn delete(
-        &self,
-        table_id: TableId,
-        key: &[u8],
-        txn_id: u64,
-    ) -> KvResult<()>;
+    async fn delete(&self, table_id: TableId, key: &[u8], txn_id: u64) -> KvResult<()>;
 
     /// 创建索引
-    async fn create_index(
-        &self,
-        table_id: TableId,
-        col_id: ColumnId,
-    ) -> KvResult<IndexId>;
+    async fn create_index(&self, table_id: TableId, col_id: ColumnId) -> KvResult<IndexId>;
 
     /// 通过索引查找
     async fn index_lookup(

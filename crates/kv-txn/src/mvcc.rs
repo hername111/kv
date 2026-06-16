@@ -16,7 +16,9 @@ pub struct VersionChain {
 
 impl VersionChain {
     pub fn new() -> Self {
-        VersionChain { versions: Vec::new() }
+        VersionChain {
+            versions: Vec::new(),
+        }
     }
 
     pub fn add_version(&mut self, txn_id: u64, value: Option<Vec<u8>>, is_deleted: bool) {
@@ -38,7 +40,9 @@ impl VersionChain {
                 if let Some(prev) = v.prev_version_txn {
                     if prev <= snapshot_txn_id {
                         for pv in self.versions.iter().rev() {
-                            if pv.txn_id == prev { return Some(pv); }
+                            if pv.txn_id == prev {
+                                return Some(pv);
+                            }
                         }
                     }
                 }
@@ -54,23 +58,32 @@ pub struct MvccStore {
 
 impl MvccStore {
     pub fn new() -> Self {
-        MvccStore { chains: Mutex::new(HashMap::new()) }
+        MvccStore {
+            chains: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn write(&self, key: Vec<u8>, value: Vec<u8>, txn_id: u64) {
         let mut chains = self.chains.lock().unwrap();
-        chains.entry(key).or_insert_with(VersionChain::new).add_version(txn_id, Some(value), false);
+        chains
+            .entry(key)
+            .or_insert_with(VersionChain::new)
+            .add_version(txn_id, Some(value), false);
     }
 
     pub fn delete(&self, key: Vec<u8>, txn_id: u64) {
         let mut chains = self.chains.lock().unwrap();
-        chains.entry(key).or_insert_with(VersionChain::new).add_version(txn_id, None, true);
+        chains
+            .entry(key)
+            .or_insert_with(VersionChain::new)
+            .add_version(txn_id, None, true);
     }
 
     pub fn read(&self, key: &[u8], snapshot_txn_id: u64, active_txns: &[u64]) -> Option<Vec<u8>> {
         let chains = self.chains.lock().unwrap();
         chains.get(key).and_then(|chain| {
-            chain.visible_version(snapshot_txn_id, active_txns)
+            chain
+                .visible_version(snapshot_txn_id, active_txns)
                 .and_then(|v| v.value.clone().filter(|_| !v.is_deleted))
         })
     }

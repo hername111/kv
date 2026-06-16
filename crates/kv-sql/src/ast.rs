@@ -1,5 +1,5 @@
 // AST 节点定义：Statement, Expr, Operator, OrderBy, Join, SelectItem
-use kv_common::types::{ColumnDef, Row, Value, DataType};
+use kv_common::types::{ColumnDef, DataType, Row, Value};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -65,7 +65,9 @@ impl Expr {
     pub fn evaluate(&self, row: &Row, column_names: &[String]) -> Option<Value> {
         match self {
             Expr::Column(name) => {
-                let idx = column_names.iter().position(|c| c.eq_ignore_ascii_case(name))?;
+                let idx = column_names
+                    .iter()
+                    .position(|c| c.eq_ignore_ascii_case(name))?;
                 row.values.get(idx).cloned()
             }
             Expr::LiteralInt(i) => Some(Value::Int(*i)),

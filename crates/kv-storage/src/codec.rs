@@ -56,37 +56,68 @@ pub fn deserialize_row(mut data: &[u8]) -> Result<Row, io::Error> {
         match tag {
             0x00 => values.push(Value::Null),
             0x01 => {
-                if data.len() < 8 { return Err(Error::new(ErrorKind::UnexpectedEof, "insufficient bytes for Int")); }
+                if data.len() < 8 {
+                    return Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "insufficient bytes for Int",
+                    ));
+                }
                 let mut buf = [0u8; 8];
                 buf.copy_from_slice(&data[..8]);
                 values.push(Value::Int(i64::from_le_bytes(buf)));
                 data = &data[8..];
             }
             0x02 => {
-                if data.len() < 8 { return Err(Error::new(ErrorKind::UnexpectedEof, "insufficient bytes for Float")); }
+                if data.len() < 8 {
+                    return Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "insufficient bytes for Float",
+                    ));
+                }
                 let mut buf = [0u8; 8];
                 buf.copy_from_slice(&data[..8]);
                 values.push(Value::Float(f64::from_le_bytes(buf)));
                 data = &data[8..];
             }
             0x03 => {
-                if data.len() < 4 { return Err(Error::new(ErrorKind::UnexpectedEof, "insufficient bytes for String len")); }
+                if data.len() < 4 {
+                    return Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "insufficient bytes for String len",
+                    ));
+                }
                 let mut lenb = [0u8; 4];
                 lenb.copy_from_slice(&data[..4]);
                 let len = u32::from_le_bytes(lenb) as usize;
                 data = &data[4..];
-                if data.len() < len { return Err(Error::new(ErrorKind::UnexpectedEof, "insufficient bytes for String data")); }
-                let s = String::from_utf8(data[..len].to_vec()).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+                if data.len() < len {
+                    return Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "insufficient bytes for String data",
+                    ));
+                }
+                let s = String::from_utf8(data[..len].to_vec())
+                    .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
                 values.push(Value::String(s));
                 data = &data[len..];
             }
             0x04 => {
-                if data.is_empty() { return Err(Error::new(ErrorKind::UnexpectedEof, "insufficient bytes for Bool")); }
+                if data.is_empty() {
+                    return Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "insufficient bytes for Bool",
+                    ));
+                }
                 let b = data[0] != 0;
                 values.push(Value::Bool(b));
                 data = &data[1..];
             }
-            other => return Err(Error::new(ErrorKind::InvalidData, format!("unknown tag: {}", other))),
+            other => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("unknown tag: {}", other),
+                ));
+            }
         }
     }
     Ok(Row { values })
@@ -99,22 +130,39 @@ mod tests {
 
     #[test]
     fn codec_test() {
-        let row = Row { values: vec![
-            Value::Int(10),
-            Value::Float(3.14),
-            Value::String("hello".to_string()),
-            Value::Bool(true),
-            Value::Null,
-        ]};
+        let row = Row {
+            values: vec![
+                Value::Int(10),
+                Value::Float(3.14),
+                Value::String("hello".to_string()),
+                Value::Bool(true),
+                Value::Null,
+            ],
+        };
 
         let buf = serialize_row(&row);
         let decoded = deserialize_row(&buf).unwrap();
         assert_eq!(decoded.values.len(), 5);
 
-        match &decoded.values[0] { Value::Int(i) => assert_eq!(*i, 10), _ => panic!("expected Int") }
-        match &decoded.values[1] { Value::Float(f) => assert!((*f - 3.14).abs() < 1e-9), _ => panic!("expected Float") }
-        match &decoded.values[2] { Value::String(s) => assert_eq!(s, "hello"), _ => panic!("expected String") }
-        match &decoded.values[3] { Value::Bool(b) => assert_eq!(*b, true), _ => panic!("expected Bool") }
-        match &decoded.values[4] { Value::Null => (), _ => panic!("expected Null") }
+        match &decoded.values[0] {
+            Value::Int(i) => assert_eq!(*i, 10),
+            _ => panic!("expected Int"),
+        }
+        match &decoded.values[1] {
+            Value::Float(f) => assert!((*f - 3.14).abs() < 1e-9),
+            _ => panic!("expected Float"),
+        }
+        match &decoded.values[2] {
+            Value::String(s) => assert_eq!(s, "hello"),
+            _ => panic!("expected String"),
+        }
+        match &decoded.values[3] {
+            Value::Bool(b) => assert_eq!(*b, true),
+            _ => panic!("expected Bool"),
+        }
+        match &decoded.values[4] {
+            Value::Null => (),
+            _ => panic!("expected Null"),
+        }
     }
 }

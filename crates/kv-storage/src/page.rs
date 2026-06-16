@@ -31,7 +31,13 @@ impl PageHeader {
         let free_start = u16::from_le_bytes(data[10..12].try_into().unwrap());
         let free_end = u16::from_le_bytes(data[12..14].try_into().unwrap());
         let flags = data[14];
-        PageHeader { page_id, tuple_count, free_start, free_end, flags }
+        PageHeader {
+            page_id,
+            tuple_count,
+            free_start,
+            free_end,
+            flags,
+        }
     }
 }
 
@@ -57,7 +63,11 @@ impl SlotEntry {
         let offset = u16::from_le_bytes(data[0..2].try_into().unwrap());
         let length = u16::from_le_bytes(data[2..4].try_into().unwrap());
         let flags = data[4];
-        SlotEntry { offset, length, flags }
+        SlotEntry {
+            offset,
+            length,
+            flags,
+        }
     }
 }
 
@@ -74,7 +84,9 @@ impl Default for SlottedPage {
 
 impl SlottedPage {
     pub fn new(page_id: u64) -> Self {
-        let mut page = SlottedPage { data: [0u8; PAGE_SIZE] };
+        let mut page = SlottedPage {
+            data: [0u8; PAGE_SIZE],
+        };
         let header = PageHeader {
             page_id,
             tuple_count: 0,
@@ -89,7 +101,10 @@ impl SlottedPage {
 
     pub fn from_bytes(data: &[u8]) -> io::Result<Self> {
         if data.len() != PAGE_SIZE {
-            return Err(Error::new(ErrorKind::InvalidData, "page must be 4096 bytes"));
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "page must be 4096 bytes",
+            ));
         }
         let mut arr = [0u8; PAGE_SIZE];
         arr.copy_from_slice(data);
@@ -120,7 +135,11 @@ impl SlottedPage {
         let new_end = h.free_end - tuple.len() as u16;
         self.data[new_end as usize..h.free_end as usize].copy_from_slice(tuple);
 
-        let slot = SlotEntry { offset: new_end, length: tuple.len() as u16, flags: 0 };
+        let slot = SlotEntry {
+            offset: new_end,
+            length: tuple.len() as u16,
+            flags: 0,
+        };
         let slot_offset = h.free_start as usize + h.tuple_count as usize * SlotEntry::SIZE;
         let slot_enc = slot.encode();
         self.data[slot_offset..slot_offset + SlotEntry::SIZE].copy_from_slice(&slot_enc);
@@ -144,7 +163,10 @@ impl SlottedPage {
     }
 
     pub fn iter_tuples(&self) -> SlotIter {
-        SlotIter { page: self, current: 0 }
+        SlotIter {
+            page: self,
+            current: 0,
+        }
     }
 }
 
@@ -208,7 +230,10 @@ mod tests {
         page.insert(b"bbb").unwrap();
         page.insert(b"ccc").unwrap();
         let items: Vec<_> = page.iter_tuples().map(|(_, d)| d.to_vec()).collect();
-        assert_eq!(items, vec![b"aaa".to_vec(), b"bbb".to_vec(), b"ccc".to_vec()]);
+        assert_eq!(
+            items,
+            vec![b"aaa".to_vec(), b"bbb".to_vec(), b"ccc".to_vec()]
+        );
     }
 
     #[test]

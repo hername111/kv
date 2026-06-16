@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use kv_network::KvServer;
 use kv_sql::SqlExecutor;
-use kv_storage::{BufferedPager, BufferPool, DiskPager, KvStorage};
+use kv_storage::{BufferPool, BufferedPager, DiskPager, KvStorage};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

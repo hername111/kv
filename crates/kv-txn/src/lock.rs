@@ -33,7 +33,10 @@ impl LockManager {
         let mut locks = self.locks.lock().unwrap();
         let entries = locks.entry(table.to_string()).or_default();
 
-        if entries.iter().any(|e| e.txn_id != txn_id && e.mode == LockMode::Exclusive) {
+        if entries
+            .iter()
+            .any(|e| e.txn_id != txn_id && e.mode == LockMode::Exclusive)
+        {
             return Err(format!("table {} locked exclusively", table));
         }
 
@@ -76,7 +79,9 @@ impl LockManager {
 
     pub fn has_lock(&self, txn_id: u64, table: &str) -> bool {
         let locks = self.locks.lock().unwrap();
-        locks.get(table).map_or(false, |e| e.iter().any(|l| l.txn_id == txn_id))
+        locks
+            .get(table)
+            .map_or(false, |e| e.iter().any(|l| l.txn_id == txn_id))
     }
 }
 

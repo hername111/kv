@@ -58,7 +58,11 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        Self { input, chars: input.chars().collect(), pos: 0 }
+        Self {
+            input,
+            chars: input.chars().collect(),
+            pos: 0,
+        }
     }
 
     fn peek(&self) -> Option<char> {
@@ -73,7 +77,11 @@ impl<'a> Lexer<'a> {
 
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek() {
-            if c.is_whitespace() { self.advance(); } else { break; }
+            if c.is_whitespace() {
+                self.advance();
+            } else {
+                break;
+            }
         }
     }
 
@@ -123,7 +131,10 @@ impl<'a> Lexer<'a> {
             s.push(c);
             self.advance();
         }
-        Err(KvError::ParseError { pos: self.pos, message: "字符串未闭合".to_string() })
+        Err(KvError::ParseError {
+            pos: self.pos,
+            message: "字符串未闭合".to_string(),
+        })
     }
 
     fn keyword_or_ident(word: &str) -> Token {
@@ -164,42 +175,84 @@ impl<'a> Lexer<'a> {
         let mut tokens = Vec::new();
         while self.pos < self.chars.len() {
             self.skip_whitespace();
-            if self.pos >= self.chars.len() { break; }
+            if self.pos >= self.chars.len() {
+                break;
+            }
 
             let c = self.peek().unwrap();
             match c {
                 '\'' => tokens.push(self.read_string()?),
-                ',' => { tokens.push(Token::Comma); self.advance(); }
-                ';' => { tokens.push(Token::Semicolon); self.advance(); }
-                '(' => { tokens.push(Token::LeftParen); self.advance(); }
-                ')' => { tokens.push(Token::RightParen); self.advance(); }
-                '.' => { tokens.push(Token::Dot); self.advance(); }
-                '*' => { tokens.push(Token::Star); self.advance(); }
-                '=' => { tokens.push(Token::Equal); self.advance(); }
+                ',' => {
+                    tokens.push(Token::Comma);
+                    self.advance();
+                }
+                ';' => {
+                    tokens.push(Token::Semicolon);
+                    self.advance();
+                }
+                '(' => {
+                    tokens.push(Token::LeftParen);
+                    self.advance();
+                }
+                ')' => {
+                    tokens.push(Token::RightParen);
+                    self.advance();
+                }
+                '.' => {
+                    tokens.push(Token::Dot);
+                    self.advance();
+                }
+                '*' => {
+                    tokens.push(Token::Star);
+                    self.advance();
+                }
+                '=' => {
+                    tokens.push(Token::Equal);
+                    self.advance();
+                }
                 '<' => {
                     self.advance();
                     match self.peek() {
-                        Some('>') => { tokens.push(Token::NotEqual); self.advance(); }
-                        Some('=') => { tokens.push(Token::Lte); self.advance(); }
+                        Some('>') => {
+                            tokens.push(Token::NotEqual);
+                            self.advance();
+                        }
+                        Some('=') => {
+                            tokens.push(Token::Lte);
+                            self.advance();
+                        }
                         _ => tokens.push(Token::Lt),
                     }
                 }
                 '>' => {
                     self.advance();
-                    if self.peek() == Some('=') { tokens.push(Token::Gte); self.advance(); }
-                    else { tokens.push(Token::Gt); }
+                    if self.peek() == Some('=') {
+                        tokens.push(Token::Gte);
+                        self.advance();
+                    } else {
+                        tokens.push(Token::Gt);
+                    }
                 }
                 '!' => {
                     self.advance();
-                    if self.peek() == Some('=') { tokens.push(Token::NotEqual); self.advance(); }
-                    else { return Err(KvError::ParseError { pos: self.pos, message: "! 之后期望 =".to_string() }); }
+                    if self.peek() == Some('=') {
+                        tokens.push(Token::NotEqual);
+                        self.advance();
+                    } else {
+                        return Err(KvError::ParseError {
+                            pos: self.pos,
+                            message: "! 之后期望 =".to_string(),
+                        });
+                    }
                 }
                 _ if c.is_ascii_digit() => tokens.push(self.read_number()),
                 _ if c.is_alphanumeric() || c == '_' => {
                     let word = self.read_word();
                     tokens.push(Self::keyword_or_ident(&word));
                 }
-                _ => { self.advance(); } // 跳过未知字符
+                _ => {
+                    self.advance();
+                } // 跳过未知字符
             }
         }
         Ok(tokens)

@@ -1,7 +1,7 @@
-pub mod types;
 pub mod error;
 pub mod traits;
+pub mod types;
 
-pub use types::*;
 pub use error::*;
 pub use traits::*;
+pub use types::*;

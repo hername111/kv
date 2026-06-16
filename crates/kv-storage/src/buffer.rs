@@ -102,7 +102,13 @@ mod tests {
     #[async_trait::async_trait]
     impl Pager for MemPager {
         async fn read_page(&self, page_id: u64) -> kv_common::error::KvResult<Vec<u8>> {
-            Ok(self.pages.lock().unwrap().get(&page_id).cloned().unwrap_or_else(|| vec![0u8; 4096]))
+            Ok(self
+                .pages
+                .lock()
+                .unwrap()
+                .get(&page_id)
+                .cloned()
+                .unwrap_or_else(|| vec![0u8; 4096]))
         }
         async fn write_page(&self, page_id: u64, data: &[u8]) -> kv_common::error::KvResult<()> {
             let mut d = vec![0u8; 4096];
@@ -117,13 +123,20 @@ mod tests {
             *c += 1;
             Ok(id)
         }
-        async fn free_page(&self, _pid: u64) -> kv_common::error::KvResult<()> { Ok(()) }
-        async fn flush(&self) -> kv_common::error::KvResult<()> { Ok(()) }
+        async fn free_page(&self, _pid: u64) -> kv_common::error::KvResult<()> {
+            Ok(())
+        }
+        async fn flush(&self) -> kv_common::error::KvResult<()> {
+            Ok(())
+        }
     }
 
     #[tokio::test]
     async fn test_buffered_pager_cache_hit() {
-        let mem = Arc::new(MemPager { pages: Mutex::new(HashMap::new()), counter: Mutex::new(1) });
+        let mem = Arc::new(MemPager {
+            pages: Mutex::new(HashMap::new()),
+            counter: Mutex::new(1),
+        });
         let pool = Arc::new(BufferPool::new(4));
         let bp = BufferedPager::new(mem, pool);
 

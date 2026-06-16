@@ -6,10 +6,14 @@ pub const PROTOCOL_VERSION: u8 = 10;
 pub const SERVER_VERSION: &str = "5.7.32-kv";
 
 pub fn read_packet(buf: &mut BytesMut) -> io::Result<Option<Vec<u8>>> {
-    if buf.len() < 4 { return Ok(None); }
+    if buf.len() < 4 {
+        return Ok(None);
+    }
     let payload_len = buf[0] as usize | ((buf[1] as usize) << 8) | ((buf[2] as usize) << 16);
     let total = 4 + payload_len;
-    if buf.len() < total { return Ok(None); }
+    if buf.len() < total {
+        return Ok(None);
+    }
     let _ = buf.split_to(4);
     let payload = buf.split_to(payload_len).to_vec();
     Ok(Some(payload))
@@ -70,11 +74,15 @@ pub fn make_err_packet(code: u16, message: &str, seq_id: u8) -> Vec<u8> {
 
 pub fn make_column_def(name: &str, seq_id: u8) -> Vec<u8> {
     let mut payload = Vec::new();
-    payload.push(4); payload.extend_from_slice(b"def");
-    payload.push(0); payload.push(0); payload.push(0);
+    payload.push(4);
+    payload.extend_from_slice(b"def");
+    payload.push(0);
+    payload.push(0);
+    payload.push(0);
     payload.push(name.len() as u8);
     payload.extend_from_slice(name.as_bytes());
-    payload.push(0); payload.push(0x0c);
+    payload.push(0);
+    payload.push(0x0c);
     payload.extend_from_slice(&[0x08, 0x00]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.push(0xfd);
@@ -124,7 +132,9 @@ pub fn build_result_set(columns: &[String], rows: &[Vec<String>]) -> Vec<u8> {
 
 pub fn result_set_to_packets(rs: &kv_common::types::ResultSet) -> Vec<u8> {
     let columns: Vec<String> = rs.columns.iter().map(|c| c.name.clone()).collect();
-    let str_rows: Vec<Vec<String>> = rs.rows.iter()
+    let str_rows: Vec<Vec<String>> = rs
+        .rows
+        .iter()
         .map(|row| row.values.iter().map(|v| format!("{}", v)).collect())
         .collect();
     build_result_set(&columns, &str_rows)
@@ -135,11 +145,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_handshake() { assert!(make_handshake().len() > 4); }
+    fn test_handshake() {
+        assert!(make_handshake().len() > 4);
+    }
     #[test]
-    fn test_ok() { assert_eq!(make_ok_packet(1, 0, 1)[4], 0x00); }
+    fn test_ok() {
+        assert_eq!(make_ok_packet(1, 0, 1)[4], 0x00);
+    }
     #[test]
-    fn test_err() { assert_eq!(make_err_packet(1049, "x", 1)[4], 0xff); }
+    fn test_err() {
+        assert_eq!(make_err_packet(1049, "x", 1)[4], 0xff);
+    }
     #[test]
     fn test_read_write() {
         let p = write_packet(b"hi", 5);

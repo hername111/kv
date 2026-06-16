@@ -32,7 +32,9 @@ impl std::fmt::Display for TxnError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TxnError::NotFound(id) => write!(f, "Transaction {} not found", id),
-            TxnError::InvalidState(id, state) => write!(f, "Transaction {} invalid state: {:?}", id, state),
+            TxnError::InvalidState(id, state) => {
+                write!(f, "Transaction {} invalid state: {:?}", id, state)
+            }
         }
     }
 }
@@ -41,7 +43,10 @@ impl std::error::Error for TxnError {}
 
 impl TxnManager {
     pub fn new() -> Self {
-        Self { counter: 0, transactions: HashMap::new() }
+        Self {
+            counter: 0,
+            transactions: HashMap::new(),
+        }
     }
 
     /// 开始一个新事务，返回事务 id
@@ -91,7 +96,10 @@ impl TxnManager {
     pub fn add_read(&mut self, txn_id: u64, table: &str, row_id: &str) -> Result<(), TxnError> {
         match self.transactions.get_mut(&txn_id) {
             Some(txn) if txn.state == TxnState::Active => {
-                txn.read_set.entry(table.to_string()).or_default().insert(row_id.to_string());
+                txn.read_set
+                    .entry(table.to_string())
+                    .or_default()
+                    .insert(row_id.to_string());
                 Ok(())
             }
             Some(txn) => Err(TxnError::InvalidState(txn_id, txn.state.clone())),
@@ -103,7 +111,10 @@ impl TxnManager {
     pub fn add_write(&mut self, txn_id: u64, table: &str, row_id: &str) -> Result<(), TxnError> {
         match self.transactions.get_mut(&txn_id) {
             Some(txn) if txn.state == TxnState::Active => {
-                txn.write_set.entry(table.to_string()).or_default().insert(row_id.to_string());
+                txn.write_set
+                    .entry(table.to_string())
+                    .or_default()
+                    .insert(row_id.to_string());
                 Ok(())
             }
             Some(txn) => Err(TxnError::InvalidState(txn_id, txn.state.clone())),
@@ -148,7 +159,10 @@ mod tests {
         // 再次提交应失败
         assert!(matches!(mgr.commit(id), Err(TxnError::InvalidState(_, _))));
         // 回滚已提交的事务应失败
-        assert!(matches!(mgr.rollback(id), Err(TxnError::InvalidState(_, _))));
+        assert!(matches!(
+            mgr.rollback(id),
+            Err(TxnError::InvalidState(_, _))
+        ));
         // 非存在事务
         assert!(matches!(mgr.commit(999), Err(TxnError::NotFound(999))));
     }

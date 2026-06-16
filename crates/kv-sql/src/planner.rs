@@ -1,24 +1,66 @@
+use crate::ast::*;
 use kv_common::error::KvResult;
 use kv_common::types::ColumnDef;
-use crate::ast::*;
 
 #[derive(Debug, Clone)]
 pub enum PlanNode {
-    SeqScan { table: String, columns: Vec<SelectItem>, filter: Option<Expr> },
-    IndexScan { table: String, index: String, key: String },
-    Insert { table: String, columns: Vec<String>, rows: Vec<Vec<Expr>> },
-    Update { table: String, sets: Vec<(String, Expr)>, filter: Option<Expr> },
-    Delete { table: String, filter: Option<Expr> },
-    CreateTable { name: String, columns: Vec<ColumnDef>, primary_key: String },
-    CreateIndex { name: String, table: String, column: String },
-    DropTable { name: String },
+    SeqScan {
+        table: String,
+        columns: Vec<SelectItem>,
+        filter: Option<Expr>,
+    },
+    IndexScan {
+        table: String,
+        index: String,
+        key: String,
+    },
+    Insert {
+        table: String,
+        columns: Vec<String>,
+        rows: Vec<Vec<Expr>>,
+    },
+    Update {
+        table: String,
+        sets: Vec<(String, Expr)>,
+        filter: Option<Expr>,
+    },
+    Delete {
+        table: String,
+        filter: Option<Expr>,
+    },
+    CreateTable {
+        name: String,
+        columns: Vec<ColumnDef>,
+        primary_key: String,
+    },
+    CreateIndex {
+        name: String,
+        table: String,
+        column: String,
+    },
+    DropTable {
+        name: String,
+    },
     BeginTransaction,
     CommitTransaction,
     RollbackTransaction,
-    Projection { source: Box<PlanNode>, columns: Vec<SelectItem> },
-    Filter { source: Box<PlanNode>, predicate: Expr },
-    Sort { source: Box<PlanNode>, order_by: Vec<OrderBy> },
-    Join { left: Box<PlanNode>, right: Box<PlanNode>, join: Join },
+    Projection {
+        source: Box<PlanNode>,
+        columns: Vec<SelectItem>,
+    },
+    Filter {
+        source: Box<PlanNode>,
+        predicate: Expr,
+    },
+    Sort {
+        source: Box<PlanNode>,
+        order_by: Vec<OrderBy>,
+    },
+    Join {
+        left: Box<PlanNode>,
+        right: Box<PlanNode>,
+        join: Join,
+    },
 }
 
 pub struct Planner;
@@ -26,39 +68,92 @@ pub struct Planner;
 impl Planner {
     pub fn plan(stmt: Statement) -> KvResult<PlanNode> {
         match stmt {
-            Statement::Select { columns, from, where_clause, order_by, join } => {
-                let mut plan = PlanNode::SeqScan { table: from, columns: columns.clone(), filter: where_clause.clone() };
+            Statement::Select {
+                columns,
+                from,
+                where_clause,
+                order_by,
+                join,
+            } => {
+                let mut plan = PlanNode::SeqScan {
+                    table: from,
+                    columns: columns.clone(),
+                    filter: where_clause.clone(),
+                };
                 if let Some(pred) = where_clause {
-                    plan = PlanNode::Filter { source: Box::new(plan), predicate: pred };
+                    plan = PlanNode::Filter {
+                        source: Box::new(plan),
+                        predicate: pred,
+                    };
                 }
                 if let Some(j) = join {
-                    let right = PlanNode::SeqScan { table: j.table.clone(), columns: vec![SelectItem::Star], filter: None };
-                    plan = PlanNode::Join { left: Box::new(plan), right: Box::new(right), join: j };
+                    let right = PlanNode::SeqScan {
+                        table: j.table.clone(),
+                        columns: vec![SelectItem::Star],
+                        filter: None,
+                    };
+                    plan = PlanNode::Join {
+                        left: Box::new(plan),
+                        right: Box::new(right),
+                        join: j,
+                    };
                 }
                 if !order_by.is_empty() {
-                    plan = PlanNode::Sort { source: Box::new(plan), order_by };
+                    plan = PlanNode::Sort {
+                        source: Box::new(plan),
+                        order_by,
+                    };
                 }
-                plan = PlanNode::Projection { source: Box::new(plan), columns };
+                plan = PlanNode::Projection {
+                    source: Box::new(plan),
+                    columns,
+                };
                 Ok(plan)
             }
-            Statement::Insert { table, columns, values } => {
-                Ok(PlanNode::Insert { table, columns: columns.unwrap_or_default(), rows: values })
-            }
-            Statement::Update { table, set, where_clause } => {
-                Ok(PlanNode::Update { table, sets: set, filter: where_clause })
-            }
-            Statement::Delete { table, where_clause } => {
-                Ok(PlanNode::Delete { table, filter: where_clause })
-            }
-            Statement::CreateTable { name, columns, primary_key } => {
-                Ok(PlanNode::CreateTable { name, columns, primary_key })
-            }
-            Statement::CreateIndex { name, table, column } => {
-                Ok(PlanNode::CreateIndex { name, table, column })
-            }
-            Statement::DropTable { name } => {
-                Ok(PlanNode::DropTable { name })
-            }
+            Statement::Insert {
+                table,
+                columns,
+                values,
+            } => Ok(PlanNode::Insert {
+                table,
+                columns: columns.unwrap_or_default(),
+                rows: values,
+            }),
+            Statement::Update {
+                table,
+                set,
+                where_clause,
+            } => Ok(PlanNode::Update {
+                table,
+                sets: set,
+                filter: where_clause,
+            }),
+            Statement::Delete {
+                table,
+                where_clause,
+            } => Ok(PlanNode::Delete {
+                table,
+                filter: where_clause,
+            }),
+            Statement::CreateTable {
+                name,
+                columns,
+                primary_key,
+            } => Ok(PlanNode::CreateTable {
+                name,
+                columns,
+                primary_key,
+            }),
+            Statement::CreateIndex {
+                name,
+                table,
+                column,
+            } => Ok(PlanNode::CreateIndex {
+                name,
+                table,
+                column,
+            }),
+            Statement::DropTable { name } => Ok(PlanNode::DropTable { name }),
             Statement::Begin => Ok(PlanNode::BeginTransaction),
             Statement::Commit => Ok(PlanNode::CommitTransaction),
             Statement::Rollback => Ok(PlanNode::RollbackTransaction),
@@ -80,7 +175,7 @@ mod tests {
         let stmt = Parser::new(tokens).parse_statement().unwrap();
         let plan = Planner::plan(stmt).unwrap();
         match plan {
-            PlanNode::Projection { .. } => {},
+            PlanNode::Projection { .. } => {}
             _ => panic!("Expected Projection"),
         }
     }

@@ -47,8 +47,9 @@
 
 ### 2.2 层间接口（Trait 定义）
 
-| 接口 | Trait | 职责 |
-|------|-------|------|
+| 接口 | Trait | 职责
+|
+| --------------------- | ---------------- | -------------------------------------------- |
 | Network → SQL | `CommandHandler` | 接收解析后的 Command，返回 ResultSet |
 | SQL → Transaction | `TxnContext` | 读写时携带 txn_id，获取可见版本 |
 | Transaction → Storage | `StorageEngine` | get / put / delete / scan，携带 version 信息 |
@@ -199,10 +200,10 @@ pub trait TxnContext {
 
 ### 5.1 分工
 
-| 角色 | 负责 crate | 关注领域 | 依赖 |
-|------|-----------|----------|------|
+| 角色  | 负责 crate                    | 关注领域                                 | 依赖               |
+| ----- | ----------------------------- | ---------------------------------------- | ------------------ |
 | **A** | kv-sql, kv-network, kv-server | SQL 解析、查询执行、网络协议、二进制集成 | kv-common (traits) |
-| **B** | kv-storage, kv-txn | B+Tree 存储、缓冲池、MVCC、锁管理 | kv-common (traits) |
+| **B** | kv-storage, kv-txn            | B+Tree 存储、缓冲池、MVCC、锁管理        | kv-common (traits) |
 
 ### 5.2 协作规则
 
@@ -279,12 +280,14 @@ main
 **页大小：** 4KB（简化实现，MySQL InnoDB 默认 16KB）
 
 **B+Tree 实现要点：**
+
 - 叶节点存储实际数据，内部节点仅存 key + child_page_id
 - 支持插入时分裂（split）和删除时合并（merge）
 - 使用 Slotted Page 布局管理变长记录
 - 根节点固定在 page_id=1
 
 **Buffer Pool：**
+
 - 固定大小的页缓存（可配置，默认 1000 页 = 4MB）
 - 淘汰策略：LRU-2（记录访问次数，优先淘汰访问 0 次的页）
 - 脏页跟踪 + 定期刷盘
@@ -324,6 +327,7 @@ pub enum Statement {
 ```
 
 **执行计划（ExecutionPlan）：**
+
 - `SeqScan` → 全表扫描
 - `IndexScan` → 索引扫描
 - `Filter` → 条件过滤
@@ -346,15 +350,18 @@ Row 版本链 (单向链表，新→旧):
 ```
 
 **可见性判断：**
+
 - 每个事务在开始时获取一个快照版本 `snapshot_version`
 - 读取时从版本链头部遍历，返回第一个 `version <= snapshot_version` 且事务已提交的版本
 - 写入时在版本链头部插入新版本（还未提交时标记为 pending）
 
 **隔离级别：**
+
 - 阶段 1：仅支持 Read Committed
 - 阶段 2：支持 Repeatable Read（Snapshot Isolation）
 
 **锁管理：**
+
 - 表级读写锁（简化实现）
 - 死锁检测：简单的超时机制
 
@@ -381,6 +388,7 @@ Row 版本链 (单向链表，新→旧):
 ```
 
 **实现范围：**
+
 - 支持 `mysql` CLI 连接（`mysql -h 127.0.0.1 -P 3306 -u root`）
 - 支持 `COM_QUERY`（查询命令）
 - 支持 `COM_QUIT`（断开连接）
@@ -447,15 +455,16 @@ pub enum KvError {
 
 ## 8. 测试策略
 
-| 层级 | 工具 | 覆盖范围 |
-|------|------|---------|
-| 单元测试 | `#[test]` + `cargo test` | 每个 crate 内部逻辑 |
-| Mock 测试 | 手动 Mock trait 实现 | 跨层接口验证 |
-| 集成测试 | `tests/` 目录，真实存储 | SQL → Storage 端到端 |
-| 兼容性测试 | `mysql` CLI + shell 脚本 | Wire Protocol 正确性 |
-| 模糊测试 | 可选，后期引入 `proptest` | 边界条件和 crash 检测 |
+| 层级       | 工具                      | 覆盖范围              |
+| ---------- | ------------------------- | --------------------- |
+| 单元测试   | `#[test]` + `cargo test`  | 每个 crate 内部逻辑   |
+| Mock 测试  | 手动 Mock trait 实现      | 跨层接口验证          |
+| 集成测试   | `tests/` 目录，真实存储   | SQL → Storage 端到端  |
+| 兼容性测试 | `mysql` CLI + shell 脚本  | Wire Protocol 正确性  |
+| 模糊测试   | 可选，后期引入 `proptest` | 边界条件和 crash 检测 |
 
 **每个 crate 的测试策略：**
+
 - `kv-storage`：B+Tree 插入/删除/搜索的正确性，页分裂/合并，缓冲池淘汰逻辑
 - `kv-sql`：SQL 解析正确性（合法/非法输入），查询计划生成，执行结果验证
 - `kv-txn`：并发事务测试，MVCC 可见性，锁竞争场景
