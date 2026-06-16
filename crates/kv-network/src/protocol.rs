@@ -52,13 +52,14 @@ pub fn make_handshake() -> Vec<u8> {
     write_packet(&payload, 0)
 }
 
-pub fn make_ok_packet(_affected_rows: u64, _last_insert_id: u64, seq_id: u8) -> Vec<u8> {
+pub fn make_ok_packet(affected_rows: u64, last_insert_id: u64, seq_id: u8) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(0x00);
-    payload.push(0x00);
-    payload.push(0x00);
-    payload.extend_from_slice(&[0x02, 0x00]);
-    payload.extend_from_slice(&[0x00, 0x00]);
+    // length-encoded integers (simplified: single byte for values < 251)
+    payload.push(affected_rows.min(250) as u8);
+    payload.push(last_insert_id.min(250) as u8);
+    payload.extend_from_slice(&[0x02, 0x00]); // status flags
+    payload.extend_from_slice(&[0x00, 0x00]); // warnings
     write_packet(&payload, seq_id)
 }
 

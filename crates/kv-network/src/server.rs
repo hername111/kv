@@ -76,8 +76,17 @@ async fn handle_client(
                     if let Some(ref h) = handler {
                         match h.execute(&sql, &session).await {
                             Ok(rs) => {
-                                let packets = protocol::result_set_to_packets(&rs);
-                                socket.write_all(&packets).await?;
+                                if rs.columns.is_empty() {
+                                    let ok = protocol::make_ok_packet(
+                                        rs.affected_rows,
+                                        rs.last_insert_id.unwrap_or(0),
+                                        1,
+                                    );
+                                    socket.write_all(&ok).await?;
+                                } else {
+                                    let packets = protocol::result_set_to_packets(&rs);
+                                    socket.write_all(&packets).await?;
+                                }
                             }
                             Err(e) => {
                                 let err = protocol::make_err_packet(1064, &format!("{}", e), 1);
