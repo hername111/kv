@@ -3,45 +3,79 @@ use kv_common::error::KvResult;
 use kv_common::traits::{Pager, StorageEngine};
 use kv_common::types::{ColumnId, IndexId, TableId};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use crate::btree::BPlusTree;
 use crate::buffer::BufferPool;
 
+/// Index metadata stored alongside the B+Tree
+struct IndexEntry {
+    table_id: TableId,
+    col_idx: usize, // column index in the table's column list
+    tree: Arc<BPlusTree>,
+}
+
 pub struct KvStorage {
     pager: Arc<dyn Pager>,
-    trees: HashMap<TableId, BPlusTree>,
+    trees: Mutex<HashMap<TableId, Arc<BPlusTree>>>,
+    indexes: Mutex<HashMap<IndexId, IndexEntry>>,
     buffer_pool: BufferPool,
-    next_table_id: TableId,
-    next_index_id: IndexId,
+    next_table_id: AtomicU64,
+    next_index_id: AtomicU64,
 }
 
 impl KvStorage {
     pub fn new(pager: Arc<dyn Pager>, buffer_capacity: usize) -> Self {
         KvStorage {
             pager,
-            trees: HashMap::new(),
+            trees: Mutex::new(HashMap::new()),
+            indexes: Mutex::new(HashMap::new()),
             buffer_pool: BufferPool::new(buffer_capacity),
-            next_table_id: 1,
-            next_index_id: 1,
+            next_table_id: AtomicU64::new(1),
+            next_index_id: AtomicU64::new(1),
         }
     }
 
-    pub async fn create_table(&mut self, _table_name: &str) -> KvResult<TableId> {
-        let table_id = self.next_table_id;
-        self.next_table_id += 1;
-        let tree = BPlusTree::new(self.pager.clone()).await?;
-        self.trees.insert(table_id, tree);
-        Ok(table_id)
+    fn get_tree(&self, table_id: TableId) -> KvResult<Arc<BPlusTree>> {
+        self.trees.lock().unwrap()
+            .get(&table_id).cloned()
+            .ok_or_else(|| kv_common::error::KvError::TableNotFound(format!("table_id={}", table_id)))
     }
 
-    fn get_tree(&self, table_id: TableId) -> KvResult<&BPlusTree> {
-        self.trees.get(&table_id)
-            .ok_or_else(|| kv_common::error::KvError::TableNotFound(format!("table_id={}", table_id)))
+    /// Build a secondary index by scanning the base table (called externally by executor)
+    pub async fn build_index(
+        &self,
+        index_id: IndexId,
+        table_id: TableId,
+        col_idx: usize,
+        all_rows: &[(Vec<u8>, Vec<u8>)],
+    ) -> KvResult<()> {
+        let tree = BPlusTree::new(self.pager.clone()).await?;
+        for (pk, row_data) in all_rows {
+            if let Ok(row) = crate::codec::deserialize_row(row_data) {
+                if let Some(col_val) = row.values.get(col_idx) {
+                    let index_key = crate::codec::serialize_value(col_val);
+                    tree.insert(&index_key, pk).await?;
+                }
+            }
+        }
+        self.indexes.lock().unwrap().insert(
+            index_id,
+            IndexEntry { table_id, col_idx, tree: Arc::new(tree) },
+        );
+        Ok(())
     }
 }
 
 #[async_trait]
 impl StorageEngine for KvStorage {
+    async fn create_table(&self, _table_name: &str) -> KvResult<TableId> {
+        let table_id = self.next_table_id.fetch_add(1, Ordering::Relaxed);
+        let tree = BPlusTree::new(self.pager.clone()).await?;
+        self.trees.lock().unwrap().insert(table_id, Arc::new(tree));
+        Ok(table_id)
+    }
+
     async fn put(&self, table_id: TableId, key: &[u8], value: &[u8], _txn_id: u64) -> KvResult<u64> {
         self.get_tree(table_id)?.insert(key, value).await?;
         Ok(1)
@@ -61,24 +95,29 @@ impl StorageEngine for KvStorage {
     }
 
     async fn create_index(&self, _table_id: TableId, _col_id: ColumnId) -> KvResult<IndexId> {
-        let id = 1u64;
+        let id = self.next_index_id.fetch_add(1, Ordering::Relaxed);
         Ok(id)
     }
 
-    async fn index_lookup(&self, _index_id: IndexId, key: &[u8], _txn_id: u64) -> KvResult<Vec<Vec<u8>>> {
-        let mut results = Vec::new();
-        for tree in self.trees.values() {
-            if let Some(val) = tree.search(key).await? { results.push(val); }
+    async fn index_lookup(&self, index_id: IndexId, key: &[u8], _txn_id: u64) -> KvResult<Vec<Vec<u8>>> {
+        let tree = {
+            let indexes = self.indexes.lock().unwrap();
+            indexes.get(&index_id).map(|entry| entry.tree.clone())
+        };
+        if let Some(tree) = tree {
+            if let Some(val) = tree.search(key).await? {
+                return Ok(vec![val]);
+            }
         }
-        Ok(results)
+        Ok(Vec::new())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any { self }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    use std::sync::Mutex;
 
     struct MemPager { pages: Mutex<HashMap<u64, Vec<u8>>>, counter: Mutex<u64> }
     #[async_trait]
@@ -98,7 +137,7 @@ mod tests {
     #[tokio::test]
     async fn test_engine_put_get() {
         let pager = Arc::new(MemPager { pages: Mutex::new(HashMap::new()), counter: Mutex::new(1) });
-        let mut s = KvStorage::new(pager, 64);
+        let s = KvStorage::new(pager, 64);
         let tid = s.create_table("t").await.unwrap();
         s.put(tid, b"k", b"v", 0).await.unwrap();
         assert_eq!(s.get(tid, b"k", 0).await.unwrap(), Some(b"v".to_vec()));
@@ -107,7 +146,7 @@ mod tests {
     #[tokio::test]
     async fn test_engine_scan() {
         let pager = Arc::new(MemPager { pages: Mutex::new(HashMap::new()), counter: Mutex::new(1) });
-        let mut s = KvStorage::new(pager, 64);
+        let s = KvStorage::new(pager, 64);
         let tid = s.create_table("t").await.unwrap();
         for i in 0..5u8 { s.put(tid, &[i], &[i*2], 0).await.unwrap(); }
         assert_eq!(s.scan(tid, &[1u8], &[4u8], 0).await.unwrap().len(), 3);

@@ -8,6 +8,9 @@ use async_trait::async_trait;
 /// 存储引擎抽象 — SQL 层和事务层依赖此 trait 访问数据
 #[async_trait]
 pub trait StorageEngine: Send + Sync {
+    /// 创建表，返回 table_id
+    async fn create_table(&self, table_name: &str) -> KvResult<TableId>;
+
     /// 插入或更新一行
     async fn put(
         &self,
@@ -56,6 +59,9 @@ pub trait StorageEngine: Send + Sync {
         key: &[u8],
         txn_id: u64,
     ) -> KvResult<Vec<Vec<u8>>>;
+
+    /// 用于向下转型到具体实现
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// SQL 命令处理接口 — Network 层调用此 trait 执行 SQL

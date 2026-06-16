@@ -26,6 +26,11 @@ pub enum Token {
     Key,
     And,
     Or,
+    Not,
+    Null,
+    Begin,
+    Commit,
+    Rollback,
     Ident(String),
     Star,
     Comma,
@@ -146,6 +151,11 @@ impl<'a> Lexer<'a> {
             "KEY" => Token::Key,
             "AND" => Token::And,
             "OR" => Token::Or,
+            "NOT" => Token::Not,
+            "NULL" => Token::Null,
+            "BEGIN" => Token::Begin,
+            "COMMIT" => Token::Commit,
+            "ROLLBACK" => Token::Rollback,
             _ => Token::Ident(word.to_string()),
         }
     }

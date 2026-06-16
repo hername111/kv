@@ -12,6 +12,9 @@ pub enum PlanNode {
     CreateTable { name: String, columns: Vec<ColumnDef>, primary_key: String },
     CreateIndex { name: String, table: String, column: String },
     DropTable { name: String },
+    BeginTransaction,
+    CommitTransaction,
+    RollbackTransaction,
     Projection { source: Box<PlanNode>, columns: Vec<SelectItem> },
     Filter { source: Box<PlanNode>, predicate: Expr },
     Sort { source: Box<PlanNode>, order_by: Vec<OrderBy> },
@@ -56,6 +59,9 @@ impl Planner {
             Statement::DropTable { name } => {
                 Ok(PlanNode::DropTable { name })
             }
+            Statement::Begin => Ok(PlanNode::BeginTransaction),
+            Statement::Commit => Ok(PlanNode::CommitTransaction),
+            Statement::Rollback => Ok(PlanNode::RollbackTransaction),
         }
     }
 }

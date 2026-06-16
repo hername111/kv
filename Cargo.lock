@@ -163,6 +163,7 @@ dependencies = [
  "async-trait",
  "kv-common",
  "kv-storage",
+ "kv-txn",
  "nom",
  "tokio",
 ]

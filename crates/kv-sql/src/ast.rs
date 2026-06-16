@@ -37,6 +37,9 @@ pub enum Statement {
     DropTable {
         name: String,
     },
+    Begin,
+    Commit,
+    Rollback,
 }
 
 #[derive(Debug, Clone)]

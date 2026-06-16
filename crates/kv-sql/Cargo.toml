@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 kv-common = { path = "../kv-common" }
 kv-storage = { path = "../kv-storage" }
+kv-txn = { path = "../kv-txn" }
 nom.workspace = true
 async-trait.workspace = true
 

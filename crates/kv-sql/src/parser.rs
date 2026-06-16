@@ -40,6 +40,9 @@ impl Parser {
             Some(Token::Delete) => self.parse_delete(),
             Some(Token::Create) => self.parse_create(),
             Some(Token::Drop) => self.parse_drop(),
+            Some(Token::Begin) => { self.advance(); Ok(Statement::Begin) }
+            Some(Token::Commit) => { self.advance(); Ok(Statement::Commit) }
+            Some(Token::Rollback) => { self.advance(); Ok(Statement::Rollback) }
             Some(t) => Err(KvError::ParseError { pos: self.pos, message: format!("unexpected token: {:?}", t) }),
             None => Err(KvError::ParseError { pos: self.pos, message: "empty statement".to_string() }),
         }
@@ -260,6 +263,11 @@ fn token_matches_keyword(tok: &Token, word: &str) -> bool {
         Token::Key => w == "KEY",
         Token::And => w == "AND",
         Token::Or => w == "OR",
+        Token::Not => w == "NOT",
+        Token::Null => w == "NULL",
+        Token::Begin => w == "BEGIN",
+        Token::Commit => w == "COMMIT",
+        Token::Rollback => w == "ROLLBACK",
         _ => false,
     }
 }

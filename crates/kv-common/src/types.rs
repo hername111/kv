@@ -166,18 +166,29 @@ impl ResultSet {
 }
 
 // ===== 会话信息 =====
-#[derive(Debug, Clone)]
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Debug)]
 pub struct Session {
     pub database: Option<String>,
-    pub txn_id: Option<u64>,
+    txn_id: AtomicU64,
 }
 
 impl Session {
     pub fn new() -> Self {
         Self {
             database: None,
-            txn_id: None,
+            txn_id: AtomicU64::new(0),
         }
+    }
+
+    pub fn txn_id(&self) -> Option<u64> {
+        let id = self.txn_id.load(Ordering::Relaxed);
+        if id == 0 { None } else { Some(id) }
+    }
+
+    pub fn set_txn_id(&self, id: Option<u64>) {
+        self.txn_id.store(id.unwrap_or(0), Ordering::Relaxed);
     }
 }
 

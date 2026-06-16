@@ -9,32 +9,43 @@ use std::io::{self, Error, ErrorKind};
 // 0x02 => Float (f64, 8 bytes LE)
 // 0x03 => String (u32 len LE, then bytes)
 // 0x04 => Bool (u8 0/1)
+
 pub fn serialize_row(row: &Row) -> Vec<u8> {
     let mut buf = Vec::new();
     for val in &row.values {
-        match val {
-            Value::Null => buf.push(0x00),
-            Value::Int(i) => {
-                buf.push(0x01);
-                buf.extend(&i.to_le_bytes());
-            }
-            Value::Float(f) => {
-                buf.push(0x02);
-                buf.extend(&f.to_le_bytes());
-            }
-            Value::String(s) => {
-                buf.push(0x03);
-                let bytes = s.as_bytes();
-                buf.extend(&(bytes.len() as u32).to_le_bytes());
-                buf.extend(bytes);
-            }
-            Value::Bool(b) => {
-                buf.push(0x04);
-                buf.push(*b as u8);
-            }
-        }
+        serialize_value_into(val, &mut buf);
     }
     buf
+}
+
+pub fn serialize_value(val: &Value) -> Vec<u8> {
+    let mut buf = Vec::new();
+    serialize_value_into(val, &mut buf);
+    buf
+}
+
+fn serialize_value_into(val: &Value, buf: &mut Vec<u8>) {
+    match val {
+        Value::Null => buf.push(0x00),
+        Value::Int(i) => {
+            buf.push(0x01);
+            buf.extend(&i.to_le_bytes());
+        }
+        Value::Float(f) => {
+            buf.push(0x02);
+            buf.extend(&f.to_le_bytes());
+        }
+        Value::String(s) => {
+            buf.push(0x03);
+            let bytes = s.as_bytes();
+            buf.extend(&(bytes.len() as u32).to_le_bytes());
+            buf.extend(bytes);
+        }
+        Value::Bool(b) => {
+            buf.push(0x04);
+            buf.push(*b as u8);
+        }
+    }
 }
 
 pub fn deserialize_row(mut data: &[u8]) -> Result<Row, io::Error> {
