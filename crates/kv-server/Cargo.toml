@@ -10,4 +10,5 @@ kv-storage = { path = "../kv-storage" }
 kv-sql = { path = "../kv-sql" }
 kv-txn = { path = "../kv-txn" }
 kv-network = { path = "../kv-network" }
+async-trait.workspace = true
 tokio.workspace = true

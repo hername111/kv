@@ -6,4 +6,9 @@ license.workspace = true
 
 [dependencies]
 kv-common = { path = "../kv-common" }
+kv-storage = { path = "../kv-storage" }
 nom.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
