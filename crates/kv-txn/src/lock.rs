@@ -31,6 +31,7 @@ impl LockManager {
 
     pub fn try_lock_shared(&self, txn_id: u64, table: &str) -> Result<(), String> {
         let mut locks = self.locks.lock().unwrap();
+        self.remove_expired(&mut locks);
         let entries = locks.entry(table.to_string()).or_default();
 
         if entries
@@ -53,6 +54,7 @@ impl LockManager {
 
     pub fn try_lock_exclusive(&self, txn_id: u64, table: &str) -> Result<(), String> {
         let mut locks = self.locks.lock().unwrap();
+        self.remove_expired(&mut locks);
         let entries = locks.entry(table.to_string()).or_default();
 
         if entries.iter().any(|e| e.txn_id != txn_id) {
@@ -81,7 +83,15 @@ impl LockManager {
         let locks = self.locks.lock().unwrap();
         locks
             .get(table)
-            .map_or(false, |e| e.iter().any(|l| l.txn_id == txn_id))
+            .is_some_and(|e| e.iter().any(|l| l.txn_id == txn_id))
+    }
+
+    fn remove_expired(&self, locks: &mut HashMap<String, Vec<LockEntry>>) {
+        let now = Instant::now();
+        locks.values_mut().for_each(|entries| {
+            entries.retain(|entry| now.duration_since(entry.acquired_at) <= self.timeout)
+        });
+        locks.retain(|_, entries| !entries.is_empty());
     }
 }
 

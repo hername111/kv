@@ -436,7 +436,7 @@ impl Parser {
             let ascending = if self.match_kw("DESC") {
                 false
             } else {
-                if self.match_kw("ASC") {}
+                self.match_kw("ASC");
                 true
             };
             items.push(OrderBy { column, ascending });

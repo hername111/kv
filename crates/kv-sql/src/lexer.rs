@@ -51,17 +51,17 @@ pub enum Token {
 }
 
 pub struct Lexer<'a> {
-    input: &'a str,
     chars: Vec<char>,
     pos: usize,
+    _marker: std::marker::PhantomData<&'a str>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
-            input,
             chars: input.chars().collect(),
             pos: 0,
+            _marker: std::marker::PhantomData,
         }
     }
 

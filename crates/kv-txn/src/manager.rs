@@ -41,6 +41,12 @@ impl std::fmt::Display for TxnError {
 
 impl std::error::Error for TxnError {}
 
+impl Default for TxnManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TxnManager {
     pub fn new() -> Self {
         Self {

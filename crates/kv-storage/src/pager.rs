@@ -22,25 +22,26 @@ impl DiskPager {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(path.as_ref())
-            .map_err(|e| KvError::Io(e))?;
+            .map_err(KvError::Io)?;
 
-        let file_len = file.metadata().map_err(|e| KvError::Io(e))?.len();
+        let file_len = file.metadata().map_err(KvError::Io)?.len();
 
         let (next_page_id, free_pages, meta_root) = if file_len == 0 {
-            file.set_len(PAGE_SIZE).map_err(|e| KvError::Io(e))?;
+            file.set_len(PAGE_SIZE).map_err(KvError::Io)?;
             let mut sb = vec![0u8; PAGE_SIZE as usize];
             sb[0..8].copy_from_slice(&1u64.to_le_bytes());
             sb[8..16].copy_from_slice(&0u64.to_le_bytes());
             sb[16..24].copy_from_slice(&0u64.to_le_bytes());
-            file.seek(SeekFrom::Start(0)).map_err(|e| KvError::Io(e))?;
-            file.write_all(&sb).map_err(|e| KvError::Io(e))?;
-            file.flush().map_err(|e| KvError::Io(e))?;
+            file.seek(SeekFrom::Start(0)).map_err(KvError::Io)?;
+            file.write_all(&sb).map_err(KvError::Io)?;
+            file.flush().map_err(KvError::Io)?;
             (1, Vec::new(), 0)
         } else {
             let mut sb = vec![0u8; PAGE_SIZE as usize];
-            file.seek(SeekFrom::Start(0)).map_err(|e| KvError::Io(e))?;
-            file.read_exact(&mut sb).map_err(|e| KvError::Io(e))?;
+            file.seek(SeekFrom::Start(0)).map_err(KvError::Io)?;
+            file.read_exact(&mut sb).map_err(KvError::Io)?;
             let next_id = u64::from_le_bytes(sb[0..8].try_into().unwrap());
             let free_head = u64::from_le_bytes(sb[8..16].try_into().unwrap());
             let meta_root = u64::from_le_bytes(sb[16..24].try_into().unwrap());
@@ -51,9 +52,8 @@ impl DiskPager {
                 free_pages.push(current);
                 let mut page = vec![0u8; PAGE_SIZE as usize];
                 let offset = current * PAGE_SIZE;
-                file.seek(SeekFrom::Start(offset))
-                    .map_err(|e| KvError::Io(e))?;
-                file.read_exact(&mut page).map_err(|e| KvError::Io(e))?;
+                file.seek(SeekFrom::Start(offset)).map_err(KvError::Io)?;
+                file.read_exact(&mut page).map_err(KvError::Io)?;
                 current = u64::from_le_bytes(page[0..8].try_into().unwrap());
             }
             (next_id, free_pages, meta_root)
@@ -70,22 +70,20 @@ impl DiskPager {
     fn read_page_sync(&self, page_id: u64) -> KvResult<Vec<u8>> {
         let mut file = self.file.lock().unwrap();
         let offset = page_id * PAGE_SIZE;
-        file.seek(SeekFrom::Start(offset))
-            .map_err(|e| KvError::Io(e))?;
+        file.seek(SeekFrom::Start(offset)).map_err(KvError::Io)?;
         let mut data = vec![0u8; PAGE_SIZE as usize];
-        file.read_exact(&mut data).map_err(|e| KvError::Io(e))?;
+        file.read_exact(&mut data).map_err(KvError::Io)?;
         Ok(data)
     }
 
     fn write_page_sync(&self, page_id: u64, data: &[u8]) -> KvResult<()> {
         let mut file = self.file.lock().unwrap();
         let offset = page_id * PAGE_SIZE;
-        file.seek(SeekFrom::Start(offset))
-            .map_err(|e| KvError::Io(e))?;
+        file.seek(SeekFrom::Start(offset)).map_err(KvError::Io)?;
         let mut buf = vec![0u8; PAGE_SIZE as usize];
         let len = data.len().min(PAGE_SIZE as usize);
         buf[..len].copy_from_slice(&data[..len]);
-        file.write_all(&buf).map_err(|e| KvError::Io(e))?;
+        file.write_all(&buf).map_err(KvError::Io)?;
         Ok(())
     }
 
@@ -131,11 +129,11 @@ impl Pager for DiskPager {
         *next_id += 1;
         drop(next_id);
 
-        let mut file = self.file.lock().unwrap();
+        let file = self.file.lock().unwrap();
         let required = (page_id + 1) * PAGE_SIZE;
-        let current = file.metadata().map_err(|e| KvError::Io(e))?.len();
+        let current = file.metadata().map_err(KvError::Io)?.len();
         if required > current {
-            file.set_len(required).map_err(|e| KvError::Io(e))?;
+            file.set_len(required).map_err(KvError::Io)?;
         }
         drop(file);
 
@@ -155,11 +153,7 @@ impl Pager for DiskPager {
     }
 
     async fn flush(&self) -> KvResult<()> {
-        self.file
-            .lock()
-            .unwrap()
-            .flush()
-            .map_err(|e| KvError::Io(e))?;
+        self.file.lock().unwrap().flush().map_err(KvError::Io)?;
         Ok(())
     }
 

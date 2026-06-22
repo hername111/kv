@@ -1,5 +1,5 @@
 use crate::btree::BPlusTree;
-use crate::buffer::BufferPool;
+use crate::buffer::{BufferPool, BufferedPager};
 use async_trait::async_trait;
 use kv_common::error::KvResult;
 use kv_common::traits::{Pager, StorageEngine};
@@ -10,8 +10,6 @@ use std::sync::{Arc, Mutex};
 
 /// Index metadata stored alongside the B+Tree
 struct IndexEntry {
-    table_id: TableId,
-    col_idx: usize, // column index in the table's column list
     tree: Arc<BPlusTree>,
 }
 
@@ -19,7 +17,6 @@ pub struct KvStorage {
     pager: Arc<dyn Pager>,
     trees: Mutex<HashMap<TableId, Arc<BPlusTree>>>,
     indexes: Mutex<HashMap<IndexId, IndexEntry>>,
-    buffer_pool: BufferPool,
     meta_tree: Mutex<Option<Arc<BPlusTree>>>,
     next_table_id: AtomicU64,
     next_index_id: AtomicU64,
@@ -27,11 +24,12 @@ pub struct KvStorage {
 
 impl KvStorage {
     pub fn new(pager: Arc<dyn Pager>, buffer_capacity: usize) -> Self {
+        let buffer_pool = Arc::new(BufferPool::new(buffer_capacity));
+        let pager = Arc::new(BufferedPager::new(pager, buffer_pool));
         KvStorage {
             pager,
             trees: Mutex::new(HashMap::new()),
             indexes: Mutex::new(HashMap::new()),
-            buffer_pool: BufferPool::new(buffer_capacity),
             meta_tree: Mutex::new(None),
             next_table_id: AtomicU64::new(1),
             next_index_id: AtomicU64::new(1),
@@ -51,7 +49,9 @@ impl KvStorage {
             BPlusTree::open(self.pager.clone(), meta_root)
         } else {
             let t = BPlusTree::new(self.pager.clone()).await?;
-            self.pager.set_meta_root(t.root_page_id.load(Ordering::Relaxed)).await?;
+            self.pager
+                .set_meta_root(t.root_page_id.load(Ordering::Relaxed))
+                .await?;
             t
         };
         let tree = Arc::new(tree);
@@ -74,24 +74,22 @@ impl KvStorage {
     pub async fn build_index(
         &self,
         index_id: IndexId,
-        table_id: TableId,
+        _table_id: TableId,
         col_idx: usize,
         all_rows: &[(Vec<u8>, Vec<u8>)],
     ) -> KvResult<()> {
         let tree = BPlusTree::new(self.pager.clone()).await?;
         for (pk, row_data) in all_rows {
-            if let Ok(row) = crate::codec::deserialize_row(row_data) {
-                if let Some(col_val) = row.values.get(col_idx) {
-                    let index_key = crate::codec::serialize_value(col_val);
-                    tree.insert(&index_key, pk).await?;
-                }
+            if let Ok(row) = crate::codec::deserialize_row(row_data)
+                && let Some(col_val) = row.values.get(col_idx)
+            {
+                let index_key = crate::codec::serialize_value(col_val);
+                tree.insert(&index_key, pk).await?;
             }
         }
         self.indexes.lock().unwrap().insert(
             index_id,
             IndexEntry {
-                table_id,
-                col_idx,
                 tree: Arc::new(tree),
             },
         );
@@ -101,7 +99,8 @@ impl KvStorage {
     pub async fn save_table_meta(&self, name: &str, meta: &TableMeta) -> KvResult<()> {
         let tree = self.get_or_init_meta_tree().await?;
         let key = format!("table:{}", name).into_bytes();
-        let value = serde_json::to_vec(meta).map_err(|e| kv_common::error::KvError::Internal(e.to_string()))?;
+        let value = serde_json::to_vec(meta)
+            .map_err(|e| kv_common::error::KvError::Internal(e.to_string()))?;
         tree.insert(&key, &value).await?;
         Ok(())
     }
@@ -188,10 +187,10 @@ impl StorageEngine for KvStorage {
             let indexes = self.indexes.lock().unwrap();
             indexes.get(&index_id).map(|entry| entry.tree.clone())
         };
-        if let Some(tree) = tree {
-            if let Some(val) = tree.search(key).await? {
-                return Ok(vec![val]);
-            }
+        if let Some(tree) = tree
+            && let Some(val) = tree.search(key).await?
+        {
+            return Ok(vec![val]);
         }
         Ok(Vec::new())
     }

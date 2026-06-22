@@ -122,7 +122,7 @@ impl SlottedPage {
 
     pub fn free_space(&self) -> u16 {
         let h = self.header();
-        h.free_end - h.free_start - h.tuple_count as u16 * SlotEntry::SIZE as u16
+        h.free_end - h.free_start - h.tuple_count * SlotEntry::SIZE as u16
     }
 
     pub fn insert(&mut self, tuple: &[u8]) -> io::Result<u16> {
@@ -147,7 +147,7 @@ impl SlottedPage {
         h.tuple_count += 1;
         h.free_end = new_end;
         self.set_header(&h);
-        Ok((h.tuple_count - 1) as u16)
+        Ok(h.tuple_count - 1)
     }
 
     pub fn get(&self, slot_idx: u16) -> io::Result<&[u8]> {
@@ -162,7 +162,7 @@ impl SlottedPage {
         Ok(&self.data[start..end])
     }
 
-    pub fn iter_tuples(&self) -> SlotIter {
+    pub fn iter_tuples(&self) -> SlotIter<'_> {
         SlotIter {
             page: self,
             current: 0,

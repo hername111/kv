@@ -1,5 +1,5 @@
 // AST 节点定义：Statement, Expr, Operator, OrderBy, Join, SelectItem
-use kv_common::types::{ColumnDef, DataType, Row, Value};
+use kv_common::types::{ColumnDef, Row, Value};
 
 #[derive(Debug, Clone)]
 pub enum Statement {

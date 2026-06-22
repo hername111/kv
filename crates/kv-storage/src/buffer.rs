@@ -19,7 +19,7 @@ impl BufferPool {
     }
 
     pub fn get(&self, page_id: u64) -> Option<Vec<u8>> {
-        let mut map = self.map.lock().unwrap();
+        let map = self.map.lock().unwrap();
         let result = map.get(&page_id).cloned();
         if result.is_some() {
             let mut lru = self.lru.lock().unwrap();
@@ -32,13 +32,13 @@ impl BufferPool {
     pub fn put(&self, page_id: u64, data: Vec<u8>) {
         let mut map = self.map.lock().unwrap();
         let mut lru = self.lru.lock().unwrap();
-        if map.len() >= self.capacity && !map.contains_key(&page_id) {
-            if let Some(old) = lru.first().copied() {
-                if old != page_id {
-                    map.remove(&old);
-                    lru.retain(|&id| id != old);
-                }
-            }
+        if map.len() >= self.capacity
+            && !map.contains_key(&page_id)
+            && let Some(old) = lru.first().copied()
+            && old != page_id
+        {
+            map.remove(&old);
+            lru.retain(|&id| id != old);
         }
         lru.retain(|&id| id != page_id);
         lru.push(page_id);

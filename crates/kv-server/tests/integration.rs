@@ -3,8 +3,11 @@ use kv_sql::SqlExecutor;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+type TableEntries = Vec<(Vec<u8>, Vec<u8>)>;
+type TableEntryMap = HashMap<u64, TableEntries>;
+
 struct MockStorage {
-    data: Mutex<HashMap<u64, Vec<(Vec<u8>, Vec<u8>)>>>,
+    data: Mutex<TableEntryMap>,
     next_id: Mutex<u64>,
 }
 
@@ -23,12 +26,13 @@ impl kv_common::traits::StorageEngine for MockStorage {
         value: &[u8],
         _txn: u64,
     ) -> kv_common::error::KvResult<u64> {
-        self.data
-            .lock()
-            .unwrap()
-            .entry(tid)
-            .or_default()
-            .push((key.to_vec(), value.to_vec()));
+        let mut data = self.data.lock().unwrap();
+        let entries = data.entry(tid).or_default();
+        if let Some((_, existing)) = entries.iter_mut().find(|(k, _)| k == key) {
+            *existing = value.to_vec();
+        } else {
+            entries.push((key.to_vec(), value.to_vec()));
+        }
         Ok(1)
     }
     async fn get(
@@ -60,11 +64,9 @@ impl kv_common::traits::StorageEngine for MockStorage {
             .unwrap_or_default())
     }
     async fn delete(&self, tid: u64, key: &[u8], _txn: u64) -> kv_common::error::KvResult<()> {
-        self.data
-            .lock()
-            .unwrap()
-            .get_mut(&tid)
-            .map(|v| v.retain(|(k, _)| k != key));
+        if let Some(entries) = self.data.lock().unwrap().get_mut(&tid) {
+            entries.retain(|(k, _)| k != key);
+        }
         Ok(())
     }
     async fn create_index(&self, _t: u64, _c: u64) -> kv_common::error::KvResult<u64> {

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
@@ -37,18 +37,24 @@ impl VersionChain {
                 if v.txn_id == snapshot_txn_id || !active_txns.contains(&v.txn_id) {
                     return Some(v);
                 }
-                if let Some(prev) = v.prev_version_txn {
-                    if prev <= snapshot_txn_id {
-                        for pv in self.versions.iter().rev() {
-                            if pv.txn_id == prev {
-                                return Some(pv);
-                            }
+                if let Some(prev) = v.prev_version_txn
+                    && prev <= snapshot_txn_id
+                {
+                    for pv in self.versions.iter().rev() {
+                        if pv.txn_id == prev {
+                            return Some(pv);
                         }
                     }
                 }
             }
         }
         self.versions.first()
+    }
+}
+
+impl Default for VersionChain {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -67,7 +73,7 @@ impl MvccStore {
         let mut chains = self.chains.lock().unwrap();
         chains
             .entry(key)
-            .or_insert_with(VersionChain::new)
+            .or_default()
             .add_version(txn_id, Some(value), false);
     }
 
@@ -75,7 +81,7 @@ impl MvccStore {
         let mut chains = self.chains.lock().unwrap();
         chains
             .entry(key)
-            .or_insert_with(VersionChain::new)
+            .or_default()
             .add_version(txn_id, None, true);
     }
 
@@ -86,6 +92,12 @@ impl MvccStore {
                 .visible_version(snapshot_txn_id, active_txns)
                 .and_then(|v| v.value.clone().filter(|_| !v.is_deleted))
         })
+    }
+}
+
+impl Default for MvccStore {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

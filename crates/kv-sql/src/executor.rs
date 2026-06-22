@@ -11,11 +11,14 @@ use kv_txn::manager::TxnManager;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+type TableEntries = Vec<(Vec<u8>, Vec<u8>)>;
+type TableEntryMap = HashMap<u64, TableEntries>;
+
 /// Per-transaction write buffer: stores pending operations before commit
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct TxnBuffer {
-    inserts: HashMap<u64, Vec<(Vec<u8>, Vec<u8>)>>, // table_id -> (key, value)
-    deletes: HashMap<u64, Vec<Vec<u8>>>,            // table_id -> keys
+    inserts: TableEntryMap,              // table_id -> (key, value)
+    deletes: HashMap<u64, Vec<Vec<u8>>>, // table_id -> keys
 }
 
 pub struct SqlExecutor {
@@ -24,6 +27,12 @@ pub struct SqlExecutor {
     txn_manager: Mutex<TxnManager>,
     lock_manager: LockManager,
     txn_buffers: Mutex<HashMap<u64, TxnBuffer>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TableSnapshot {
+    pub meta: TableMeta,
+    pub rows: Vec<Row>,
 }
 
 impl SqlExecutor {
@@ -39,14 +48,17 @@ impl SqlExecutor {
 
     pub async fn load_catalog(&self) -> KvResult<()> {
         let metas = self.storage.load_all_table_meta().await?;
-        let mut tables = self.tables.lock().unwrap();
+        let mut restored = Vec::with_capacity(metas.len());
         for meta in metas {
             // Restore the table's B+Tree from persisted root page ID
             if meta.root_page_id != 0 {
-                self.storage.restore_table(meta.table_id, meta.root_page_id).await?;
+                self.storage
+                    .restore_table(meta.table_id, meta.root_page_id)
+                    .await?;
             }
-            tables.insert(meta.table_name.clone(), meta);
+            restored.push((meta.table_name.clone(), meta));
         }
+        self.tables.lock().unwrap().extend(restored);
         Ok(())
     }
 
@@ -90,6 +102,50 @@ impl SqlExecutor {
             .unwrap_or_default()
     }
 
+    async fn visible_entries(
+        &self,
+        table_id: u64,
+        txn_id: u64,
+    ) -> KvResult<Vec<(Vec<u8>, Vec<u8>)>> {
+        let mut entries = self
+            .storage
+            .scan(table_id, &[], &[255u8; 32], txn_id)
+            .await?;
+        if txn_id == 0 {
+            return Ok(entries);
+        }
+
+        let buffer = self
+            .txn_buffers
+            .lock()
+            .unwrap()
+            .get(&txn_id)
+            .cloned()
+            .unwrap_or_default();
+        let table_deletes = buffer.deletes.get(&table_id);
+        if let Some(deletes) = table_deletes {
+            entries.retain(|(key, _)| !deletes.contains(key));
+        }
+
+        if let Some(inserts) = buffer.inserts.get(&table_id) {
+            for (key, value) in inserts {
+                if table_deletes.is_some_and(|deletes| deletes.contains(key)) {
+                    continue;
+                }
+                if let Some((_, existing_value)) = entries
+                    .iter_mut()
+                    .find(|(existing_key, _)| existing_key == key)
+                {
+                    *existing_value = value.clone();
+                } else {
+                    entries.push((key.clone(), value.clone()));
+                }
+            }
+        }
+
+        Ok(entries)
+    }
+
     pub async fn execute_sql(&self, sql: &str, session: &Session) -> KvResult<ResultSet> {
         let mut lexer = Lexer::new(sql);
         let tokens = lexer.tokenize()?;
@@ -98,14 +154,61 @@ impl SqlExecutor {
         self.execute_plan(plan, session).await
     }
 
+    pub async fn snapshot_tables(&self) -> KvResult<Vec<TableSnapshot>> {
+        let metas = self
+            .tables
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut snapshots = Vec::with_capacity(metas.len());
+        for meta in metas {
+            let entries = self.visible_entries(meta.table_id, 0).await?;
+            let rows = entries
+                .iter()
+                .filter_map(|(_, value)| kv_storage::codec::deserialize_row(value).ok())
+                .collect();
+            snapshots.push(TableSnapshot { meta, rows });
+        }
+        Ok(snapshots)
+    }
+
     async fn execute_plan(&self, plan: PlanNode, session: &Session) -> KvResult<ResultSet> {
         match plan {
             PlanNode::Projection { source, columns } => {
                 let inner = Box::pin(self.execute_plan(*source, session)).await?;
-                let col_defs = self.project_columns(&inner.columns, &columns);
+                let projection = self.project_columns(&inner.columns, &columns);
+                let col_defs = projection
+                    .iter()
+                    .map(|(_, col)| col.clone())
+                    .collect::<Vec<_>>();
+                let rows = if projection.len() == inner.columns.len()
+                    && projection
+                        .iter()
+                        .enumerate()
+                        .all(|(idx, (source_idx, _))| idx == *source_idx)
+                {
+                    inner.rows
+                } else {
+                    inner
+                        .rows
+                        .into_iter()
+                        .map(|row| {
+                            Row::new(
+                                projection
+                                    .iter()
+                                    .map(|(idx, _)| {
+                                        row.values.get(*idx).cloned().unwrap_or(Value::Null)
+                                    })
+                                    .collect(),
+                            )
+                        })
+                        .collect()
+                };
                 Ok(ResultSet {
                     columns: col_defs,
-                    rows: inner.rows,
+                    rows,
                     affected_rows: 0,
                     last_insert_id: None,
                 })
@@ -127,22 +230,7 @@ impl SqlExecutor {
                 if txn_id > 0 {
                     self.acquire_lock(txn_id, &table, LockMode::Shared)?;
                 }
-                let mut all = self
-                    .storage
-                    .scan(meta.table_id, &[], &[255u8; 32], txn_id)
-                    .await?;
-
-                // If inside a transaction, merge buffered writes into scan results
-                if txn_id > 0 {
-                    let buffers = self.txn_buffers.lock().unwrap();
-                    if let Some(buf) = buffers.get(&txn_id) {
-                        // Remove deleted keys from scan results
-                        if let Some(deletes) = buf.deletes.get(&meta.table_id) {
-                            all.retain(|(k, _)| !deletes.contains(k));
-                        }
-                    }
-                    drop(buffers);
-                }
+                let all = self.visible_entries(meta.table_id, txn_id).await?;
 
                 let mut rows = Vec::new();
                 for (_, val) in &all {
@@ -155,36 +243,6 @@ impl SqlExecutor {
                         };
                         if include {
                             rows.push(row);
-                        }
-                    }
-                }
-
-                // Add buffered inserts if inside a transaction
-                if txn_id > 0 {
-                    let buffers = self.txn_buffers.lock().unwrap();
-                    if let Some(buf) = buffers.get(&txn_id) {
-                        if let Some(inserts) = buf.inserts.get(&meta.table_id) {
-                            let delete_keys = buf.deletes.get(&meta.table_id);
-                            for (key, val) in inserts {
-                                // Skip inserts whose key was subsequently deleted
-                                if let Some(del_keys) = delete_keys {
-                                    if del_keys.contains(key) {
-                                        continue;
-                                    }
-                                }
-                                if let Ok(row) = kv_storage::codec::deserialize_row(val) {
-                                    let include = match &filter {
-                                        Some(pred) => {
-                                            pred.evaluate(&row, &col_names)
-                                                == Some(Value::Bool(true))
-                                        }
-                                        None => true,
-                                    };
-                                    if include {
-                                        rows.push(row);
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -259,10 +317,7 @@ impl SqlExecutor {
                 if txn_id > 0 {
                     self.acquire_lock(txn_id, &table, LockMode::Exclusive)?;
                 }
-                let all = self
-                    .storage
-                    .scan(meta.table_id, &[], &[255u8; 32], txn_id)
-                    .await?;
+                let all = self.visible_entries(meta.table_id, txn_id).await?;
                 let col_names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
                 let mut count = 0u64;
                 for (key, val) in &all {
@@ -309,10 +364,7 @@ impl SqlExecutor {
                 if txn_id > 0 {
                     self.acquire_lock(txn_id, &table, LockMode::Exclusive)?;
                 }
-                let all = self
-                    .storage
-                    .scan(meta.table_id, &[], &[255u8; 32], txn_id)
-                    .await?;
+                let all = self.visible_entries(meta.table_id, txn_id).await?;
                 let col_names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
                 let mut count = 0u64;
                 for (key, val) in &all {
@@ -352,7 +404,10 @@ impl SqlExecutor {
                     indexes: Vec::new(),
                     root_page_id,
                 };
-                self.tables.lock().unwrap().insert(name.clone(), meta.clone());
+                self.tables
+                    .lock()
+                    .unwrap()
+                    .insert(name.clone(), meta.clone());
                 self.storage.save_table_meta(&name, &meta).await?;
                 Ok(ResultSet::ok(0, None))
             }
@@ -436,10 +491,10 @@ impl SqlExecutor {
                     .await?;
                 let mut rows = Vec::new();
                 for pk in &pk_list {
-                    if let Some(val) = self.storage.get(meta.table_id, pk, txn_id).await? {
-                        if let Ok(row) = kv_storage::codec::deserialize_row(&val) {
-                            rows.push(row);
-                        }
+                    if let Some(val) = self.storage.get(meta.table_id, pk, txn_id).await?
+                        && let Ok(row) = kv_storage::codec::deserialize_row(&val)
+                    {
+                        rows.push(row);
                     }
                 }
                 Ok(ResultSet::with_rows(meta.columns.clone(), rows))
@@ -558,7 +613,6 @@ impl SqlExecutor {
                     last_insert_id: None,
                 })
             }
-            _ => Err(KvError::NotImplemented("plan node".to_string())),
         }
     }
 
@@ -593,10 +647,14 @@ impl SqlExecutor {
         }
     }
 
-    fn project_columns(&self, all_cols: &[ColumnDef], items: &[SelectItem]) -> Vec<ColumnDef> {
+    fn project_columns(
+        &self,
+        all_cols: &[ColumnDef],
+        items: &[SelectItem],
+    ) -> Vec<(usize, ColumnDef)> {
         use crate::ast::SelectItem;
         if items.iter().any(|i| matches!(i, SelectItem::Star)) {
-            return all_cols.to_vec();
+            return all_cols.iter().cloned().enumerate().collect();
         }
         items
             .iter()
@@ -607,8 +665,9 @@ impl SqlExecutor {
                 };
                 all_cols
                     .iter()
-                    .find(|c| c.name.eq_ignore_ascii_case(&name))
                     .cloned()
+                    .enumerate()
+                    .find(|(_, c)| c.name.eq_ignore_ascii_case(&name))
             })
             .collect()
     }
@@ -626,7 +685,7 @@ mod tests {
     use super::*;
 
     struct MockStorage {
-        data: Mutex<HashMap<u64, Vec<(Vec<u8>, Vec<u8>)>>>,
+        data: Mutex<TableEntryMap>,
         next_id: Mutex<u64>,
     }
 
@@ -639,12 +698,13 @@ mod tests {
             Ok(tid)
         }
         async fn put(&self, tid: TableId, key: &[u8], value: &[u8], _txn: u64) -> KvResult<u64> {
-            self.data
-                .lock()
-                .unwrap()
-                .entry(tid)
-                .or_default()
-                .push((key.to_vec(), value.to_vec()));
+            let mut data = self.data.lock().unwrap();
+            let entries = data.entry(tid).or_default();
+            if let Some((_, existing)) = entries.iter_mut().find(|(k, _)| k == key) {
+                *existing = value.to_vec();
+            } else {
+                entries.push((key.to_vec(), value.to_vec()));
+            }
             Ok(1)
         }
         async fn get(&self, tid: TableId, key: &[u8], _txn: u64) -> KvResult<Option<Vec<u8>>> {
@@ -671,11 +731,9 @@ mod tests {
                 .unwrap_or_default())
         }
         async fn delete(&self, tid: TableId, key: &[u8], _txn: u64) -> KvResult<()> {
-            self.data
-                .lock()
-                .unwrap()
-                .get_mut(&tid)
-                .map(|v| v.retain(|(k, _)| k != key));
+            if let Some(entries) = self.data.lock().unwrap().get_mut(&tid) {
+                entries.retain(|(k, _)| k != key);
+            }
             Ok(())
         }
         async fn create_index(&self, _tid: TableId, _col: ColumnId) -> KvResult<IndexId> {
@@ -694,6 +752,35 @@ mod tests {
         }
     }
 
+    fn add_test_table(exec: &SqlExecutor) {
+        exec.tables.lock().unwrap().insert(
+            "t".to_string(),
+            TableMeta {
+                table_id: 1,
+                table_name: "t".to_string(),
+                columns: vec![
+                    ColumnDef {
+                        id: 1,
+                        name: "id".to_string(),
+                        data_type: DataType::Int,
+                        nullable: false,
+                        is_primary_key: true,
+                    },
+                    ColumnDef {
+                        id: 2,
+                        name: "name".to_string(),
+                        data_type: DataType::VarChar(100),
+                        nullable: true,
+                        is_primary_key: false,
+                    },
+                ],
+                primary_key_index: 0,
+                indexes: vec![],
+                root_page_id: 0,
+            },
+        );
+    }
+
     #[tokio::test]
     async fn test_executor_insert_select() {
         let storage = Arc::new(MockStorage {
@@ -701,30 +788,103 @@ mod tests {
             next_id: Mutex::new(1),
         });
         let exec = SqlExecutor::new(storage);
-        exec.tables.lock().unwrap().insert(
-            "t".to_string(),
-            TableMeta {
-                table_id: 1,
-                table_name: "t".to_string(),
-                columns: vec![ColumnDef {
-                    id: 1,
-                    name: "id".to_string(),
-                    data_type: DataType::Int,
-                    nullable: false,
-                    is_primary_key: true,
-                }],
-                primary_key_index: 0,
-                indexes: vec![],
-                root_page_id: 0,
-            },
-        );
+        add_test_table(&exec);
         let session = Session::new();
         let rs = exec
-            .execute_sql("INSERT INTO t VALUES (1)", &session)
+            .execute_sql("INSERT INTO t VALUES (1, 'alice')", &session)
             .await
             .unwrap();
         assert_eq!(rs.affected_rows, 1);
         let rs = exec.execute_sql("SELECT * FROM t", &session).await.unwrap();
         assert_eq!(rs.rows.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_projection_filters_row_values() {
+        let storage = Arc::new(MockStorage {
+            data: Mutex::new(HashMap::new()),
+            next_id: Mutex::new(1),
+        });
+        let exec = SqlExecutor::new(storage);
+        add_test_table(&exec);
+        let session = Session::new();
+        exec.execute_sql("INSERT INTO t VALUES (1, 'alice')", &session)
+            .await
+            .unwrap();
+
+        let rs = exec
+            .execute_sql("SELECT name FROM t", &session)
+            .await
+            .unwrap();
+
+        assert_eq!(rs.columns.len(), 1);
+        assert_eq!(rs.columns[0].name, "name");
+        assert_eq!(rs.rows[0].values, vec![Value::String("alice".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn test_transaction_update_sees_buffered_insert() {
+        let storage = Arc::new(MockStorage {
+            data: Mutex::new(HashMap::new()),
+            next_id: Mutex::new(1),
+        });
+        let exec = SqlExecutor::new(storage);
+        add_test_table(&exec);
+        let session = Session::new();
+
+        exec.execute_sql("BEGIN", &session).await.unwrap();
+        exec.execute_sql("INSERT INTO t VALUES (1, 'alice')", &session)
+            .await
+            .unwrap();
+        let updated = exec
+            .execute_sql("UPDATE t SET name='bob' WHERE id=1", &session)
+            .await
+            .unwrap();
+        let visible = exec
+            .execute_sql("SELECT name FROM t", &session)
+            .await
+            .unwrap();
+        exec.execute_sql("COMMIT", &session).await.unwrap();
+        let committed = exec
+            .execute_sql("SELECT name FROM t", &session)
+            .await
+            .unwrap();
+
+        assert_eq!(updated.affected_rows, 1);
+        assert_eq!(
+            visible.rows[0].values,
+            vec![Value::String("bob".to_string())]
+        );
+        assert_eq!(
+            committed.rows[0].values,
+            vec![Value::String("bob".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_transaction_delete_sees_buffered_insert() {
+        let storage = Arc::new(MockStorage {
+            data: Mutex::new(HashMap::new()),
+            next_id: Mutex::new(1),
+        });
+        let exec = SqlExecutor::new(storage);
+        add_test_table(&exec);
+        let session = Session::new();
+
+        exec.execute_sql("BEGIN", &session).await.unwrap();
+        exec.execute_sql("INSERT INTO t VALUES (1, 'alice')", &session)
+            .await
+            .unwrap();
+        let deleted = exec
+            .execute_sql("DELETE FROM t WHERE id=1", &session)
+            .await
+            .unwrap();
+        let visible = exec.execute_sql("SELECT * FROM t", &session).await.unwrap();
+        exec.execute_sql("COMMIT", &session).await.unwrap();
+        let committed = exec.execute_sql("SELECT * FROM t", &session).await.unwrap();
+
+        assert_eq!(deleted.affected_rows, 1);
+        assert!(visible.rows.is_empty());
+        assert!(committed.rows.is_empty());
     }
 }

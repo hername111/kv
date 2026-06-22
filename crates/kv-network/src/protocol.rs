@@ -113,8 +113,7 @@ pub fn make_text_row(values: &[String], seq_id: u8) -> Vec<u8> {
 pub fn build_result_set(columns: &[String], rows: &[Vec<String>]) -> Vec<u8> {
     let mut seq = 1u8;
     let mut packets = Vec::new();
-    let mut count_payload = Vec::new();
-    count_payload.push(columns.len() as u8);
+    let count_payload = vec![columns.len() as u8];
     packets.extend_from_slice(&write_packet(&count_payload, seq));
     seq = seq.wrapping_add(1);
     for col in columns {

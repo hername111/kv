@@ -1,5 +1,4 @@
 // B+Tree (ORDER=4)：基于 Pager trait 的持久化 B+树索引
-use async_trait::async_trait;
 use kv_common::error::KvResult;
 use kv_common::traits::Pager;
 use std::sync::Arc;
@@ -297,6 +296,7 @@ impl BPlusTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -370,7 +370,7 @@ mod tests {
             tree.insert(&[i], &[i * 2]).await.unwrap();
         }
         let results = tree.scan(&[5u8], &[15u8]).await.unwrap();
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
         for (k, v) in &results {
             assert_eq!(v[0], k[0] * 2);
         }

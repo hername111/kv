@@ -133,7 +133,7 @@ mod tests {
         let row = Row {
             values: vec![
                 Value::Int(10),
-                Value::Float(3.14),
+                Value::Float(2.5),
                 Value::String("hello".to_string()),
                 Value::Bool(true),
                 Value::Null,
@@ -149,7 +149,7 @@ mod tests {
             _ => panic!("expected Int"),
         }
         match &decoded.values[1] {
-            Value::Float(f) => assert!((*f - 3.14).abs() < 1e-9),
+            Value::Float(f) => assert!((*f - 2.5).abs() < 1e-9),
             _ => panic!("expected Float"),
         }
         match &decoded.values[2] {
@@ -157,7 +157,7 @@ mod tests {
             _ => panic!("expected String"),
         }
         match &decoded.values[3] {
-            Value::Bool(b) => assert_eq!(*b, true),
+            Value::Bool(b) => assert!(*b),
             _ => panic!("expected Bool"),
         }
         match &decoded.values[4] {

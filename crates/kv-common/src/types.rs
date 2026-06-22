@@ -201,16 +201,11 @@ impl Default for Session {
 }
 
 // ===== 隔离级别 =====
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum IsolationLevel {
+    #[default]
     ReadCommitted,
     RepeatableRead,
-}
-
-impl Default for IsolationLevel {
-    fn default() -> Self {
-        IsolationLevel::ReadCommitted
-    }
 }
 
 #[cfg(test)]
