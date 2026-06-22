@@ -37,6 +37,19 @@ impl SqlExecutor {
         }
     }
 
+    pub async fn load_catalog(&self) -> KvResult<()> {
+        let metas = self.storage.load_all_table_meta().await?;
+        let mut tables = self.tables.lock().unwrap();
+        for meta in metas {
+            // Restore the table's B+Tree from persisted root page ID
+            if meta.root_page_id != 0 {
+                self.storage.restore_table(meta.table_id, meta.root_page_id).await?;
+            }
+            tables.insert(meta.table_name.clone(), meta);
+        }
+        Ok(())
+    }
+
     fn acquire_lock(&self, txn_id: u64, table: &str, mode: LockMode) -> KvResult<()> {
         let result = match mode {
             LockMode::Shared => self.lock_manager.try_lock_shared(txn_id, table),
@@ -151,7 +164,14 @@ impl SqlExecutor {
                     let buffers = self.txn_buffers.lock().unwrap();
                     if let Some(buf) = buffers.get(&txn_id) {
                         if let Some(inserts) = buf.inserts.get(&meta.table_id) {
-                            for (_, val) in inserts {
+                            let delete_keys = buf.deletes.get(&meta.table_id);
+                            for (key, val) in inserts {
+                                // Skip inserts whose key was subsequently deleted
+                                if let Some(del_keys) = delete_keys {
+                                    if del_keys.contains(key) {
+                                        continue;
+                                    }
+                                }
                                 if let Ok(row) = kv_storage::codec::deserialize_row(val) {
                                     let include = match &filter {
                                         Some(pred) => {
@@ -323,14 +343,17 @@ impl SqlExecutor {
                     .position(|c| c.name == primary_key)
                     .unwrap_or(0);
                 let table_id = self.storage.create_table(&name).await?;
+                let root_page_id = self.storage.get_table_root(table_id).await?;
                 let meta = TableMeta {
                     table_id,
                     table_name: name.clone(),
                     columns: columns.clone(),
                     primary_key_index: pk_idx,
                     indexes: Vec::new(),
+                    root_page_id,
                 };
-                self.tables.lock().unwrap().insert(name, meta);
+                self.tables.lock().unwrap().insert(name.clone(), meta.clone());
+                self.storage.save_table_meta(&name, &meta).await?;
                 Ok(ResultSet::ok(0, None))
             }
             PlanNode::CreateIndex {
@@ -369,8 +392,8 @@ impl SqlExecutor {
                     ks.build_index(index_id, meta.table_id, col_idx, &all)
                         .await?;
                 }
-                // Record index in table metadata
-                {
+                // Record index in table metadata and persist
+                let updated_meta = {
                     let mut tables = self.tables.lock().unwrap();
                     if let Some(tm) = tables.get_mut(&table) {
                         tm.indexes.push(kv_common::types::IndexMeta {
@@ -380,8 +403,12 @@ impl SqlExecutor {
                             column_id: meta.columns[col_idx].id,
                             is_unique: false,
                         });
+                        tm.clone()
+                    } else {
+                        return Ok(ResultSet::ok(0, None));
                     }
-                }
+                };
+                self.storage.save_table_meta(&table, &updated_meta).await?;
                 Ok(ResultSet::ok(0, None))
             }
             PlanNode::IndexScan {
@@ -419,6 +446,7 @@ impl SqlExecutor {
             }
             PlanNode::DropTable { name } => {
                 self.tables.lock().unwrap().remove(&name);
+                self.storage.delete_table_meta(&name).await?;
                 Ok(ResultSet::ok(0, None))
             }
             PlanNode::BeginTransaction => {
@@ -687,6 +715,7 @@ mod tests {
                 }],
                 primary_key_index: 0,
                 indexes: vec![],
+                root_page_id: 0,
             },
         );
         let session = Session::new();
