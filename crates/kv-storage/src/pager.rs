@@ -13,6 +13,7 @@ pub struct DiskPager {
     file: Mutex<std::fs::File>,
     free_pages: Mutex<Vec<u64>>,
     next_page_id: Mutex<u64>,
+    meta_root_page: Mutex<u64>,
 }
 
 impl DiskPager {
@@ -26,21 +27,23 @@ impl DiskPager {
 
         let file_len = file.metadata().map_err(|e| KvError::Io(e))?.len();
 
-        let (next_page_id, free_pages) = if file_len == 0 {
+        let (next_page_id, free_pages, meta_root) = if file_len == 0 {
             file.set_len(PAGE_SIZE).map_err(|e| KvError::Io(e))?;
             let mut sb = vec![0u8; PAGE_SIZE as usize];
             sb[0..8].copy_from_slice(&1u64.to_le_bytes());
             sb[8..16].copy_from_slice(&0u64.to_le_bytes());
+            sb[16..24].copy_from_slice(&0u64.to_le_bytes());
             file.seek(SeekFrom::Start(0)).map_err(|e| KvError::Io(e))?;
             file.write_all(&sb).map_err(|e| KvError::Io(e))?;
             file.flush().map_err(|e| KvError::Io(e))?;
-            (1, Vec::new())
+            (1, Vec::new(), 0)
         } else {
             let mut sb = vec![0u8; PAGE_SIZE as usize];
             file.seek(SeekFrom::Start(0)).map_err(|e| KvError::Io(e))?;
             file.read_exact(&mut sb).map_err(|e| KvError::Io(e))?;
             let next_id = u64::from_le_bytes(sb[0..8].try_into().unwrap());
             let free_head = u64::from_le_bytes(sb[8..16].try_into().unwrap());
+            let meta_root = u64::from_le_bytes(sb[16..24].try_into().unwrap());
 
             let mut free_pages = Vec::new();
             let mut current = free_head;
@@ -53,13 +56,14 @@ impl DiskPager {
                 file.read_exact(&mut page).map_err(|e| KvError::Io(e))?;
                 current = u64::from_le_bytes(page[0..8].try_into().unwrap());
             }
-            (next_id, free_pages)
+            (next_id, free_pages, meta_root)
         };
 
         Ok(DiskPager {
             file: Mutex::new(file),
             free_pages: Mutex::new(free_pages),
             next_page_id: Mutex::new(next_page_id),
+            meta_root_page: Mutex::new(meta_root),
         })
     }
 
@@ -94,9 +98,11 @@ impl DiskPager {
             .first()
             .copied()
             .unwrap_or(0);
+        let meta_root = *self.meta_root_page.lock().unwrap();
         let mut sb = vec![0u8; PAGE_SIZE as usize];
         sb[0..8].copy_from_slice(&next_id.to_le_bytes());
         sb[8..16].copy_from_slice(&free_head.to_le_bytes());
+        sb[16..24].copy_from_slice(&meta_root.to_le_bytes());
         self.write_page_sync(SUPERBLOCK_PAGE, &sb)
     }
 }
@@ -155,6 +161,15 @@ impl Pager for DiskPager {
             .flush()
             .map_err(|e| KvError::Io(e))?;
         Ok(())
+    }
+
+    async fn get_meta_root(&self) -> KvResult<u64> {
+        Ok(*self.meta_root_page.lock().unwrap())
+    }
+
+    async fn set_meta_root(&self, root: u64) -> KvResult<()> {
+        *self.meta_root_page.lock().unwrap() = root;
+        self.write_superblock()
     }
 }
 

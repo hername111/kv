@@ -102,6 +102,13 @@ impl BPlusTree {
         })
     }
 
+    pub fn open(pager: Arc<dyn Pager>, root_page_id: u64) -> Self {
+        BPlusTree {
+            pager,
+            root_page_id: AtomicU64::new(root_page_id),
+        }
+    }
+
     pub async fn insert(&self, key: &[u8], value: &[u8]) -> KvResult<()> {
         let result = self
             .insert_recursive(self.root_page_id.load(Ordering::Relaxed), key, value)

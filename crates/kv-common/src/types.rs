@@ -106,6 +106,8 @@ pub struct TableMeta {
     pub columns: Vec<ColumnDef>,
     pub primary_key_index: usize,
     pub indexes: Vec<IndexMeta>,
+    #[serde(default)]
+    pub root_page_id: u64,
 }
 
 impl TableMeta {

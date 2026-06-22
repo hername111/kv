@@ -3,7 +3,7 @@ use crate::buffer::BufferPool;
 use async_trait::async_trait;
 use kv_common::error::KvResult;
 use kv_common::traits::{Pager, StorageEngine};
-use kv_common::types::{ColumnId, IndexId, TableId};
+use kv_common::types::{ColumnId, IndexId, TableId, TableMeta};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -20,6 +20,7 @@ pub struct KvStorage {
     trees: Mutex<HashMap<TableId, Arc<BPlusTree>>>,
     indexes: Mutex<HashMap<IndexId, IndexEntry>>,
     buffer_pool: BufferPool,
+    meta_tree: Mutex<Option<Arc<BPlusTree>>>,
     next_table_id: AtomicU64,
     next_index_id: AtomicU64,
 }
@@ -31,9 +32,31 @@ impl KvStorage {
             trees: Mutex::new(HashMap::new()),
             indexes: Mutex::new(HashMap::new()),
             buffer_pool: BufferPool::new(buffer_capacity),
+            meta_tree: Mutex::new(None),
             next_table_id: AtomicU64::new(1),
             next_index_id: AtomicU64::new(1),
         }
+    }
+
+    async fn get_or_init_meta_tree(&self) -> KvResult<Arc<BPlusTree>> {
+        {
+            let guard = self.meta_tree.lock().unwrap();
+            if let Some(ref tree) = *guard {
+                return Ok(tree.clone());
+            }
+        }
+        // Check if meta tree root page ID was persisted in superblock
+        let meta_root = self.pager.get_meta_root().await?;
+        let tree = if meta_root != 0 {
+            BPlusTree::open(self.pager.clone(), meta_root)
+        } else {
+            let t = BPlusTree::new(self.pager.clone()).await?;
+            self.pager.set_meta_root(t.root_page_id.load(Ordering::Relaxed)).await?;
+            t
+        };
+        let tree = Arc::new(tree);
+        *self.meta_tree.lock().unwrap() = Some(tree.clone());
+        Ok(tree)
     }
 
     fn get_tree(&self, table_id: TableId) -> KvResult<Arc<BPlusTree>> {
@@ -72,6 +95,41 @@ impl KvStorage {
                 tree: Arc::new(tree),
             },
         );
+        Ok(())
+    }
+
+    pub async fn save_table_meta(&self, name: &str, meta: &TableMeta) -> KvResult<()> {
+        let tree = self.get_or_init_meta_tree().await?;
+        let key = format!("table:{}", name).into_bytes();
+        let value = serde_json::to_vec(meta).map_err(|e| kv_common::error::KvError::Internal(e.to_string()))?;
+        tree.insert(&key, &value).await?;
+        Ok(())
+    }
+
+    pub async fn load_all_table_meta(&self) -> KvResult<Vec<TableMeta>> {
+        let tree = self.get_or_init_meta_tree().await?;
+        let entries = tree.scan(b"table:", b"table;").await?;
+        let mut metas = Vec::new();
+        for (_, val) in entries {
+            let meta: TableMeta = serde_json::from_slice(&val)
+                .map_err(|e| kv_common::error::KvError::Internal(e.to_string()))?;
+            metas.push(meta);
+        }
+        let max_tid = metas.iter().map(|m| m.table_id).max().unwrap_or(0);
+        let max_iid = metas
+            .iter()
+            .flat_map(|m| m.indexes.iter().map(|i| i.index_id))
+            .max()
+            .unwrap_or(0);
+        self.next_table_id.store(max_tid + 1, Ordering::Relaxed);
+        self.next_index_id.store(max_iid + 1, Ordering::Relaxed);
+        Ok(metas)
+    }
+
+    pub async fn delete_table_meta(&self, name: &str) -> KvResult<()> {
+        let tree = self.get_or_init_meta_tree().await?;
+        let key = format!("table:{}", name).into_bytes();
+        tree.delete(&key).await?;
         Ok(())
     }
 }
@@ -136,6 +194,29 @@ impl StorageEngine for KvStorage {
             }
         }
         Ok(Vec::new())
+    }
+
+    async fn save_table_meta(&self, name: &str, meta: &TableMeta) -> KvResult<()> {
+        self.save_table_meta(name, meta).await
+    }
+
+    async fn load_all_table_meta(&self) -> KvResult<Vec<TableMeta>> {
+        self.load_all_table_meta().await
+    }
+
+    async fn delete_table_meta(&self, name: &str) -> KvResult<()> {
+        self.delete_table_meta(name).await
+    }
+
+    async fn get_table_root(&self, table_id: TableId) -> KvResult<u64> {
+        let tree = self.get_tree(table_id)?;
+        Ok(tree.root_page_id.load(Ordering::Relaxed))
+    }
+
+    async fn restore_table(&self, table_id: TableId, root_page_id: u64) -> KvResult<()> {
+        let tree = BPlusTree::open(self.pager.clone(), root_page_id);
+        self.trees.lock().unwrap().insert(table_id, Arc::new(tree));
+        Ok(())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

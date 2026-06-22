@@ -1,6 +1,6 @@
 // 核心 trait 定义：StorageEngine, CommandHandler, TxnContext, Pager
 use crate::error::KvResult;
-use crate::types::{ColumnId, IndexId, IsolationLevel, ResultSet, Session, TableId};
+use crate::types::{ColumnId, IndexId, IsolationLevel, ResultSet, Session, TableId, TableMeta};
 use async_trait::async_trait;
 
 /// 存储引擎抽象 — SQL 层和事务层依赖此 trait 访问数据
@@ -38,6 +38,29 @@ pub trait StorageEngine: Send + Sync {
         txn_id: u64,
     ) -> KvResult<Vec<Vec<u8>>>;
 
+    /// 持久化表元数据
+    async fn save_table_meta(&self, _name: &str, _meta: &TableMeta) -> KvResult<()> {
+        Ok(())
+    }
+    /// 加载所有持久化的表元数据
+    async fn load_all_table_meta(&self) -> KvResult<Vec<TableMeta>> {
+        Ok(Vec::new())
+    }
+    /// 从 catalog 中删除表元数据
+    async fn delete_table_meta(&self, _name: &str) -> KvResult<()> {
+        Ok(())
+    }
+
+    /// 获取表的 B+Tree root page ID（用于持久化）
+    async fn get_table_root(&self, _table_id: TableId) -> KvResult<u64> {
+        Ok(0)
+    }
+
+    /// 用已知 root page ID 恢复表的 B+Tree
+    async fn restore_table(&self, _table_id: TableId, _root_page_id: u64) -> KvResult<()> {
+        Ok(())
+    }
+
     /// 用于向下转型到具体实现
     fn as_any(&self) -> &dyn std::any::Any;
 }
@@ -72,4 +95,14 @@ pub trait Pager: Send + Sync {
 
     /// 刷盘
     async fn flush(&self) -> KvResult<()>;
+
+    /// 读取 superblock 中保存的 meta tree root page ID
+    async fn get_meta_root(&self) -> KvResult<u64> {
+        Ok(0)
+    }
+
+    /// 写入 meta tree root page ID 到 superblock
+    async fn set_meta_root(&self, _root: u64) -> KvResult<()> {
+        Ok(())
+    }
 }

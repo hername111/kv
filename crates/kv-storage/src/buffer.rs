@@ -86,6 +86,14 @@ impl Pager for BufferedPager {
     async fn flush(&self) -> kv_common::error::KvResult<()> {
         self.inner.flush().await
     }
+
+    async fn get_meta_root(&self) -> kv_common::error::KvResult<u64> {
+        self.inner.get_meta_root().await
+    }
+
+    async fn set_meta_root(&self, root: u64) -> kv_common::error::KvResult<()> {
+        self.inner.set_meta_root(root).await
+    }
 }
 
 #[cfg(test)]

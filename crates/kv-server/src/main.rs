@@ -14,6 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pager = Arc::new(BufferedPager::new(disk, pool));
     let storage = Arc::new(KvStorage::new(pager, 256));
     let executor = Arc::new(SqlExecutor::new(storage));
+    executor.load_catalog().await?;
     let addr = std::env::var("KV_ADDR").unwrap_or_else(|_| "127.0.0.1:3307".to_string());
     println!("Binding to {}", addr);
     println!("Data directory: {}", data_dir);

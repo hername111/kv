@@ -20,6 +20,17 @@ impl Parser {
         self.pos += 1;
         t
     }
+    /// 解析可能带表前缀的列名，如 "table.col" → 返回 "col"
+    fn parse_on_column(&mut self) -> KvResult<String> {
+        let first = self.expect_ident()?;
+        if self.peek() == Some(&Token::Dot) {
+            self.advance();
+            Ok(self.expect_ident()?)
+        } else {
+            Ok(first)
+        }
+    }
+
     fn expect_ident(&mut self) -> KvResult<String> {
         let pos = self.pos;
         match self.advance() {
@@ -107,9 +118,9 @@ impl Parser {
         if self.match_kw("JOIN") {
             let table = self.expect_ident()?;
             self.match_kw("ON");
-            let left = self.expect_ident()?;
+            let left = self.parse_on_column()?;
             self.expect(Token::Equal)?;
-            let right = self.expect_ident()?;
+            let right = self.parse_on_column()?;
             join = Some(Join {
                 table,
                 on: (left, right),
@@ -344,7 +355,12 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> KvResult<Expr> {
-        let mut left = self.parse_primary()?;
+        self.parse_logical()
+    }
+
+    /// logical: comparison (AND/OR comparison)*
+    fn parse_logical(&mut self) -> KvResult<Expr> {
+        let mut left = self.parse_comparison()?;
         while let Some(tok) = self.peek() {
             let op = match tok {
                 Token::And => {
@@ -355,36 +371,38 @@ impl Parser {
                     self.advance();
                     Operator::Or
                 }
-                Token::Equal => {
-                    self.advance();
-                    Operator::Eq
-                }
-                Token::NotEqual => {
-                    self.advance();
-                    Operator::Neq
-                }
-                Token::Gt => {
-                    self.advance();
-                    Operator::Gt
-                }
-                Token::Lt => {
-                    self.advance();
-                    Operator::Lt
-                }
-                Token::Gte => {
-                    self.advance();
-                    Operator::Gte
-                }
-                Token::Lte => {
-                    self.advance();
-                    Operator::Lte
-                }
                 _ => break,
             };
-            let right = self.parse_primary()?;
+            let right = self.parse_comparison()?;
             left = Expr::BinaryOp(Box::new(left), op, Box::new(right));
         }
         Ok(left)
+    }
+
+    /// comparison: primary ((= | <> | != | > | < | >= | <=) primary)?
+    fn parse_comparison(&mut self) -> KvResult<Expr> {
+        let left = self.parse_primary()?;
+        match self.peek() {
+            Some(Token::Equal)
+            | Some(Token::NotEqual)
+            | Some(Token::Gt)
+            | Some(Token::Lt)
+            | Some(Token::Gte)
+            | Some(Token::Lte) => {
+                let op = match self.advance() {
+                    Some(Token::Equal) => Operator::Eq,
+                    Some(Token::NotEqual) => Operator::Neq,
+                    Some(Token::Gt) => Operator::Gt,
+                    Some(Token::Lt) => Operator::Lt,
+                    Some(Token::Gte) => Operator::Gte,
+                    Some(Token::Lte) => Operator::Lte,
+                    _ => unreachable!(),
+                };
+                let right = self.parse_primary()?;
+                Ok(Expr::BinaryOp(Box::new(left), op, Box::new(right)))
+            }
+            _ => Ok(left),
+        }
     }
 
     fn parse_primary(&mut self) -> KvResult<Expr> {
@@ -394,6 +412,7 @@ impl Parser {
             Some(Token::LiteralInt(i)) => Ok(Expr::LiteralInt(*i)),
             Some(Token::LiteralFloat(f)) => Ok(Expr::LiteralFloat(*f)),
             Some(Token::LiteralString(s)) => Ok(Expr::LiteralString(s.clone())),
+            Some(Token::Null) => Ok(Expr::LiteralNull),
             Some(Token::LeftParen) => {
                 let expr = self.parse_expr()?;
                 self.expect(Token::RightParen)?;
