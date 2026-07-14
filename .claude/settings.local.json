@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python test_protocol.py)",
-      "Bash(python test_protocol.py --no-persistence)",
-      "Bash(echo \"EXIT_CODE: $?\")"
-    ]
-  }
-}

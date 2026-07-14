@@ -259,7 +259,7 @@ def summary():
 class ServerProcess:
     """管理 KV 服务器的启停。"""
 
-    def __init__(self, data_dir="kv_data", port=3307):
+    def __init__(self, data_dir="target/kv-test-data", port=3307):
         self.data_dir = data_dir
         self.port = port
         self.process = None
@@ -300,7 +300,12 @@ class ServerProcess:
 
         self.process = subprocess.Popen(
             [self.binary],
-            env={**os.environ, "KV_DATA_DIR": self.data_dir, "KV_ADDR": f"127.0.0.1:{self.port}"},
+            env={
+                **os.environ,
+                "KV_DATA_DIR": self.data_dir,
+                "KV_ADDR": f"127.0.0.1:{self.port}",
+                "KV_DEMO_ADDR": "127.0.0.1:18080",
+            },
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -339,7 +344,12 @@ class ServerProcess:
         self.stop()
         self.process = subprocess.Popen(
             [self.binary],
-            env={**os.environ, "KV_DATA_DIR": self.data_dir, "KV_ADDR": f"127.0.0.1:{self.port}"},
+            env={
+                **os.environ,
+                "KV_DATA_DIR": self.data_dir,
+                "KV_ADDR": f"127.0.0.1:{self.port}",
+                "KV_DEMO_ADDR": "127.0.0.1:18080",
+            },
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -813,7 +823,7 @@ def run_tests(skip_persistence=False):
     else:
         # 完整模式：自行管理服务器生命周期
         global PASS, FAIL, TEST_INDEX
-        server = ServerProcess(data_dir="kv_data", port=3307)
+        server = ServerProcess(port=3307)
 
         if not server.start():
             print("Server failed to start")

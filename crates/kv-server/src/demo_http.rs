@@ -8,19 +8,25 @@ const INDEX_HTML: &str = "KV demo API is running. Start demo-client with npm run
 
 pub async fn start_demo_http(addr: String, executor: Arc<SqlExecutor>) -> std::io::Result<()> {
     let listener = TcpListener::bind(&addr).await?;
+    let session = Arc::new(Session::new());
     println!("Demo HTTP API listening on http://{}", addr);
     loop {
         let (stream, peer) = listener.accept().await?;
         let executor = executor.clone();
+        let session = session.clone();
         tokio::spawn(async move {
-            if let Err(err) = handle_http(stream, executor).await {
+            if let Err(err) = handle_http(stream, executor, session).await {
                 eprintln!("Demo HTTP error from {}: {}", peer, err);
             }
         });
     }
 }
 
-async fn handle_http(mut stream: TcpStream, executor: Arc<SqlExecutor>) -> std::io::Result<()> {
+async fn handle_http(
+    mut stream: TcpStream,
+    executor: Arc<SqlExecutor>,
+    session: Arc<Session>,
+) -> std::io::Result<()> {
     let mut buffer = vec![0u8; 16384];
     let read = stream.read(&mut buffer).await?;
     if read == 0 {
@@ -66,8 +72,7 @@ async fn handle_http(mut stream: TcpStream, executor: Arc<SqlExecutor>) -> std::
         }
         ("POST", "/api/query") => {
             let sql = extract_json_string(&body, "sql").unwrap_or_default();
-            let session = Session::new();
-            let result = executor.execute_sql(&sql, &session).await;
+            let result = executor.execute_sql(&sql, session.as_ref()).await;
             let state = make_state_json(&executor)
                 .await
                 .unwrap_or_else(|err| format!("{{\"ok\":false,\"error\":{}}}", json_string(&err)));

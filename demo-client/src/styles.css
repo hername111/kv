@@ -1,6 +1,6 @@
 :root {
-  color: #18201d;
-  background: #f4f7f6;
+  color: #1d252c;
+  background: #f3f5f7;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -34,20 +34,22 @@ button {
 .shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 330px 1fr;
-  background:
-    linear-gradient(180deg, rgba(31, 122, 90, 0.08), transparent 280px),
-    #f4f7f6;
+  grid-template-columns: 300px minmax(0, 1fr);
+  background: #f3f5f7;
 }
 
 .sidebar {
-  background: #101816;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: #171b20;
   color: #f8fbf9;
   padding: 22px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  border-right: 1px solid #273430;
+  border-right: 1px solid #30363d;
 }
 
 .brand,
@@ -64,9 +66,9 @@ button {
   padding-bottom: 6px;
 }
 
-.brand h1,
-.hero h2 {
+.brand h1 {
   margin: 0;
+  font-size: 18px;
 }
 
 .brand p,
@@ -177,7 +179,7 @@ button {
 
 .workspace {
   min-width: 0;
-  padding: 24px;
+  padding: 20px 24px 28px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -186,28 +188,40 @@ button {
 .hero {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 18px;
 }
 
 .eyebrow {
-  margin: 0 0 6px;
-  color: #1f7a5a;
+  margin: 0 0 5px;
+  color: #52606d;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
 }
 
-.hero h2 {
-  max-width: 760px;
-  font-size: 30px;
-  line-height: 1.15;
+.connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #66737d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.connection.online {
+  color: #157052;
+}
+
+.connection.offline {
+  color: #b33a32;
 }
 
 .primary,
 .ghost,
-.hint-button {
+.hint-button,
+.icon-button {
   height: 38px;
   display: inline-flex;
   align-items: center;
@@ -218,7 +232,7 @@ button {
 }
 
 .primary {
-  background: #1f7a5a;
+  background: #176b5b;
   color: #fff;
   box-shadow: 0 8px 18px rgba(31, 122, 90, 0.2);
 }
@@ -229,8 +243,24 @@ button {
 
 .ghost,
 .hint-button {
-  background: #e8eeea;
-  color: #24312d;
+  background: #e7eaed;
+  color: #28343d;
+}
+
+.icon-button {
+  width: 38px;
+  justify-content: center;
+  padding: 0;
+  color: #33414b;
+  background: #e7eaed;
+}
+
+.icon-button.subtle {
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  color: #53616b;
+  background: #eef1f3;
 }
 
 .top-grid {
@@ -242,9 +272,9 @@ button {
 .panel,
 .editor-card,
 .pipeline-card {
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #dce5df;
-  box-shadow: 0 12px 28px rgba(25, 36, 31, 0.07);
+  background: #ffffff;
+  border: 1px solid #d9dee3;
+  box-shadow: 0 8px 24px rgba(24, 32, 38, 0.06);
 }
 
 .panel,
@@ -263,12 +293,6 @@ button {
   font-weight: 800;
 }
 
-.hint-button {
-  margin-left: auto;
-  height: 30px;
-  font-size: 12px;
-}
-
 textarea {
   width: 100%;
   min-height: 220px;
@@ -277,7 +301,7 @@ textarea {
   outline: 0;
   padding: 16px;
   color: #10201a;
-  background: #fbfdfb;
+  background: #fbfcfd;
   font-family: "Cascadia Code", "Fira Code", ui-monospace, monospace;
   line-height: 1.55;
 }
@@ -352,9 +376,9 @@ textarea {
 }
 
 .stage.active {
-  background: #1f7a5a;
+  background: #176b5b;
   color: #fff;
-  border-color: #1f7a5a;
+  border-color: #176b5b;
   transform: translateY(-3px);
 }
 
@@ -406,7 +430,7 @@ textarea {
   align-items: baseline;
   gap: 8px;
   background: #dff5e7;
-  color: #1f7a5a;
+  color: #176b5b;
 }
 
 .ok-card strong {
@@ -432,7 +456,7 @@ textarea {
 }
 
 .tabs button.selected {
-  background: #1f7a5a;
+  background: #176b5b;
   color: #fff;
 }
 
@@ -518,14 +542,14 @@ tr {
   min-height: 150px;
   border: 1px solid #d7e0da;
   border-radius: 8px;
-  background: linear-gradient(180deg, #f8fbf9, #eef5f1);
+  background: #f8faf9;
   overflow: hidden;
   animation: blockIn 260ms ease both;
 }
 
 .block-head {
   height: 42px;
-  background: #17201d;
+  background: #25313a;
   color: #d7f5e3;
   display: flex;
   justify-content: space-between;
@@ -534,6 +558,12 @@ tr {
   font-size: 12px;
   text-transform: uppercase;
   font-weight: 900;
+}
+
+.duration {
+  margin-left: auto;
+  color: #77838c;
+  font-weight: 600;
 }
 
 .block-field {
@@ -571,7 +601,6 @@ tr {
 }
 
 @media (max-width: 1120px) {
-  .shell,
   .top-grid,
   .content-grid {
     grid-template-columns: 1fr;
@@ -583,6 +612,10 @@ tr {
       "state"
       "storage";
   }
+
+  .shell {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 760px) {
@@ -591,12 +624,38 @@ tr {
     padding: 16px;
   }
 
+  .shell {
+    display: block;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    overflow: visible;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .brand {
+    grid-column: 1 / -1;
+  }
+
+  .guide,
+  .history {
+    display: none;
+  }
+
   .hero {
     flex-direction: column;
   }
 
-  .hero h2 {
-    font-size: 24px;
+  .actions {
+    width: 100%;
+  }
+
+  .primary {
+    flex: 1;
+    justify-content: center;
   }
 
   .pipeline {

@@ -2,7 +2,7 @@ mod demo_http;
 
 use kv_network::KvServer;
 use kv_sql::SqlExecutor;
-use kv_storage::{BufferPool, BufferedPager, DiskPager, KvStorage};
+use kv_storage::{DiskPager, KvStorage};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -12,9 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = format!("{}/kv.db", data_dir);
     std::fs::create_dir_all(&data_dir)?;
     let disk = Arc::new(DiskPager::open(&db_path)?);
-    let pool = Arc::new(BufferPool::new(256));
-    let pager = Arc::new(BufferedPager::new(disk, pool));
-    let storage = Arc::new(KvStorage::new(pager, 256));
+    let storage = Arc::new(KvStorage::new(disk, 256));
     let executor = Arc::new(SqlExecutor::new(storage));
     executor.load_catalog().await?;
     let addr = std::env::var("KV_ADDR").unwrap_or_else(|_| "127.0.0.1:3307".to_string());

@@ -2,12 +2,13 @@ import {
   Activity,
   ArrowRight,
   Blocks,
+  CircleCheck,
+  CircleX,
   Database,
-  HelpCircle,
   Layers3,
   Play,
+  RefreshCw,
   RotateCcw,
-  Sparkles,
   Table2,
   TerminalSquare,
 } from "lucide-react";
@@ -17,29 +18,24 @@ const API_BASE = "";
 
 const EXAMPLES = [
   {
-    title: "Create table",
+    title: "创建用户表",
     sql: "CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100), age INT);",
-    hint: "Start with catalog metadata and a primary-key layout.",
   },
   {
-    title: "Insert seed row",
+    title: "插入示例数据",
     sql: "INSERT INTO users VALUES (1, 'Ada', 28);",
-    hint: "Watch the row appear in the storage view.",
   },
   {
-    title: "Projection query",
+    title: "条件查询",
     sql: "SELECT name, age FROM users WHERE id = 1;",
-    hint: "Compare selected columns against table state.",
   },
   {
-    title: "Update row",
+    title: "更新记录",
     sql: "UPDATE users SET age = 29 WHERE id = 1;",
-    hint: "Show a write path and refreshed data block.",
   },
   {
-    title: "Transaction path",
+    title: "事务操作",
     sql: "BEGIN;\nINSERT INTO users VALUES (2, 'Grace', 31);\nUPDATE users SET age = 32 WHERE id = 2;\nSELECT * FROM users;\nCOMMIT;",
-    hint: "Demonstrate buffered writes before commit.",
   },
 ];
 
@@ -62,12 +58,12 @@ const KEYWORDS = [
 ];
 
 const PIPELINE = [
-  { name: "Lexer", detail: "SQL text -> tokens" },
-  { name: "Parser", detail: "Tokens -> AST" },
-  { name: "Planner", detail: "AST -> plan nodes" },
-  { name: "Txn", detail: "Locks and buffered writes" },
-  { name: "B+Tree", detail: "Primary-key storage" },
-  { name: "Result", detail: "Rows or affected count" },
+  { name: "词法", detail: "SQL -> Token" },
+  { name: "语法", detail: "Token -> AST" },
+  { name: "计划", detail: "AST -> Plan" },
+  { name: "事务", detail: "锁与写集" },
+  { name: "B+Tree", detail: "页面索引" },
+  { name: "结果", detail: "结果集" },
 ];
 
 function App() {
@@ -81,6 +77,8 @@ function App() {
   const [selectedTable, setSelectedTable] = useState("");
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [lastStatement, setLastStatement] = useState("");
+  const [connected, setConnected] = useState(null);
+  const [duration, setDuration] = useState(null);
   const textareaRef = useRef(null);
 
   const tables = state.tables ?? [];
@@ -127,9 +125,17 @@ function App() {
   }, [tables, selectedTable]);
 
   async function refreshState() {
-    const response = await fetch(`${API_BASE}/api/state`);
-    const data = await response.json();
-    setState(data);
+    try {
+      const response = await fetch(`${API_BASE}/api/state`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      setState(data);
+      setConnected(Boolean(data.ok));
+      setError("");
+    } catch (requestError) {
+      setConnected(false);
+      setError(`无法连接数据库服务：${requestError.message}`);
+    }
   }
 
   async function executeSql() {
@@ -142,39 +148,49 @@ function App() {
     setRunning(true);
     setError("");
     setResult(null);
+    setDuration(null);
     setActiveStage(0);
+    const startedAt = performance.now();
 
     let lastPayload = null;
-    for (const statement of statements) {
-      setLastStatement(statement);
-      await animatePipeline();
-      const response = await fetch(`${API_BASE}/api/query`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql: statement }),
-      });
-      const payload = await response.json();
-      lastPayload = payload;
-      setState(payload.state ?? state);
-      setHistory((items) =>
-        [
-          {
-            sql: statement,
-            ok: payload.ok,
-            at: new Date().toLocaleTimeString(),
-          },
-          ...items,
-        ].slice(0, 8),
-      );
-      if (!payload.ok) {
-        setError(payload.error || "Query failed");
-        break;
+    try {
+      for (const statement of statements) {
+        setLastStatement(statement);
+        await animatePipeline();
+        const response = await fetch(`${API_BASE}/api/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sql: statement }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        lastPayload = payload;
+        if (payload.state) setState(payload.state);
+        setConnected(true);
+        setHistory((items) =>
+          [
+            {
+              sql: statement,
+              ok: payload.ok,
+              at: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+            },
+            ...items,
+          ].slice(0, 8),
+        );
+        if (!payload.ok) {
+          setError(payload.error || "SQL 执行失败");
+          break;
+        }
       }
+      setResult(lastPayload?.result ?? null);
+    } catch (requestError) {
+      setConnected(false);
+      setError(`请求失败：${requestError.message}`);
+    } finally {
+      setDuration(Math.round(performance.now() - startedAt));
+      setRunning(false);
+      setActiveStage(-1);
     }
-
-    setResult(lastPayload?.result ?? null);
-    setRunning(false);
-    setActiveStage(-1);
   }
 
   async function animatePipeline() {
@@ -198,6 +214,7 @@ function App() {
     setError("");
     setHistory([]);
     setLastStatement("");
+    setDuration(null);
   }
 
   return (
@@ -206,21 +223,21 @@ function App() {
         <div className="brand">
           <Database size={26} />
           <div>
-            <h1>KV Demo</h1>
-            <p>Relational SQL on a Rust KV engine</p>
+            <h1>KV Database</h1>
+            <p>Rust 关系型数据库工作台</p>
           </div>
         </div>
 
         <section className="side-card metrics">
-          <Metric label="Tables" value={tables.length} />
-          <Metric label="Rows" value={totalRows} />
-          <Metric label="Columns" value={totalColumns} />
+          <Metric label="数据表" value={tables.length} />
+          <Metric label="记录" value={totalRows} />
+          <Metric label="字段" value={totalColumns} />
         </section>
 
         <section className="side-card guide">
           <div className="panel-title">
-            <HelpCircle size={17} />
-            <span>Guided Flow</span>
+            <TerminalSquare size={17} />
+            <span>SQL 模板</span>
           </div>
           {EXAMPLES.map((item, index) => (
             <button
@@ -231,7 +248,6 @@ function App() {
               <span className="step">{index + 1}</span>
               <span>
                 <strong>{item.title}</strong>
-                <small>{item.hint}</small>
               </span>
             </button>
           ))}
@@ -240,10 +256,10 @@ function App() {
         <section className="side-card history">
           <div className="panel-title">
             <Activity size={17} />
-            <span>Run History</span>
+            <span>执行历史</span>
           </div>
           {history.length === 0 ? (
-            <p className="muted">No statements executed yet.</p>
+            <p className="muted">暂无执行记录</p>
           ) : (
             history.map((item) => (
               <div className="history-row" key={`${item.at}-${item.sql}`}>
@@ -259,17 +275,23 @@ function App() {
       <section className="workspace">
         <header className="hero">
           <div>
-            <p className="eyebrow">Interactive SQL Console</p>
-            <h2>Run a statement, then trace how data moves through the engine.</h2>
+            <p className="eyebrow">KV DATABASE STUDIO</p>
+            <div className={`connection ${connected ? "online" : connected === false ? "offline" : "checking"}`}>
+              {connected ? <CircleCheck size={15} /> : <CircleX size={15} />}
+              {connected ? "服务在线" : connected === false ? "服务离线" : "正在连接"}
+            </div>
           </div>
           <div className="actions">
+            <button className="icon-button" onClick={refreshState} title="刷新数据库状态" aria-label="刷新数据库状态">
+              <RefreshCw size={16} />
+            </button>
             <button className="ghost" onClick={resetDemo}>
               <RotateCcw size={16} />
-              Reset UI
+              重置
             </button>
             <button className="primary" onClick={executeSql} disabled={running}>
               <Play size={16} />
-              {running ? "Running" : `Run ${statementCount || ""}`}
+              {running ? "执行中" : `执行${statementCount > 1 ? ` ${statementCount} 条` : ""}`}
             </button>
           </div>
         </header>
@@ -278,13 +300,14 @@ function App() {
           <section className="editor-card">
             <div className="editor-head">
               <TerminalSquare size={18} />
-              <span>SQL Editor</span>
+              <span>SQL 编辑器</span>
               <button
-                className="hint-button"
+                className="icon-button subtle"
                 onClick={() => setSuggestionsOpen((open) => !open)}
+                title="SQL 补全"
+                aria-label="SQL 补全"
               >
-                <Sparkles size={15} />
-                Suggestions
+                <TerminalSquare size={15} />
               </button>
             </div>
             <textarea
@@ -295,6 +318,12 @@ function App() {
                 setSuggestionsOpen(true);
               }}
               onFocus={() => setSuggestionsOpen(true)}
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  executeSql();
+                }
+              }}
               spellCheck="false"
             />
             {suggestionsOpen && suggestions.length > 0 && (
@@ -312,7 +341,7 @@ function App() {
         </section>
 
         <section className="content-grid">
-          <ResultView result={result} error={error} />
+          <ResultView result={result} error={error} duration={duration} />
           <StateView
             tables={tables}
             selected={selected}
@@ -340,10 +369,10 @@ function Pipeline({ activeStage, lastStatement }) {
     <section className="pipeline-card">
       <div className="panel-title">
         <Layers3 size={17} />
-        <span>Execution Flow</span>
+        <span>执行链路</span>
       </div>
       <div className="statement-chip">
-        {lastStatement || "Waiting for the next statement"}
+        {lastStatement || "等待执行"}
       </div>
       <div className="pipeline">
         {PIPELINE.map((stage, index) => (
@@ -363,21 +392,22 @@ function Pipeline({ activeStage, lastStatement }) {
   );
 }
 
-function ResultView({ result, error }) {
+function ResultView({ result, error, duration }) {
   return (
     <section className="panel result-panel">
       <div className="panel-title">
         <TerminalSquare size={17} />
-        <span>Result</span>
+        <span>执行结果</span>
+        {duration !== null ? <small className="duration">{duration} ms</small> : null}
       </div>
       {error ? <div className="error">{error}</div> : null}
       {!error && !result ? (
-        <p className="muted">Run a statement to see output.</p>
+        <p className="muted">暂无结果</p>
       ) : null}
       {!error && result?.columns?.length === 0 ? (
         <div className="ok-card">
           <strong>{result.affectedRows}</strong>
-          <span>affected rows</span>
+          <span>行受影响</span>
         </div>
       ) : null}
       {!error && result?.columns?.length > 0 ? (
@@ -392,7 +422,7 @@ function StateView({ tables, selected, selectedTable, setSelectedTable }) {
     <section className="panel state-panel">
       <div className="panel-title">
         <Table2 size={17} />
-        <span>Table State</span>
+        <span>数据表状态</span>
       </div>
       {!tables.length ? (
         <EmptyState />
@@ -434,12 +464,12 @@ function StorageView({ selected }) {
     <section className="panel storage-panel">
       <div className="panel-title">
         <Blocks size={17} />
-        <span>Storage Blocks</span>
+        <span>存储记录</span>
       </div>
       {!selected ? (
-        <p className="muted">Storage blocks appear after a table exists.</p>
+        <p className="muted">暂无数据表</p>
       ) : rows.length === 0 ? (
-        <p className="muted">The selected table has no rows yet.</p>
+        <p className="muted">当前表暂无记录</p>
       ) : (
         <div className="block-grid">
           {rows.map((row, rowIndex) => (
@@ -466,8 +496,8 @@ function EmptyState() {
   return (
     <div className="empty-state">
       <Database size={28} />
-      <strong>No tables yet</strong>
-      <span>Use the first guide step to create a table.</span>
+      <strong>暂无数据表</strong>
+      <span>数据库目录当前为空</span>
     </div>
   );
 }
@@ -486,7 +516,7 @@ function DataTable({ columns, rows, compact = false }) {
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length || 1}>No rows</td>
+              <td colSpan={columns.length || 1}>暂无记录</td>
             </tr>
           ) : (
             rows.map((row, rowIndex) => (
