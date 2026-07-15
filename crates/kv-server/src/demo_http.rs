@@ -1,6 +1,7 @@
 use kv_common::types::{ColumnDef, ResultSet, Row, Session, TableMeta, Value};
 use kv_sql::{SqlExecutor, TableSnapshot};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -72,28 +73,59 @@ async fn handle_http(
         }
         ("POST", "/api/query") => {
             let sql = extract_json_string(&body, "sql").unwrap_or_default();
+            let started_at = Instant::now();
             let result = executor.execute_sql(&sql, session.as_ref()).await;
+            let duration_micros = started_at.elapsed().as_micros();
             let state = make_state_json(&executor)
                 .await
                 .unwrap_or_else(|err| format!("{{\"ok\":false,\"error\":{}}}", json_string(&err)));
             let body = match result {
                 Ok(rs) => format!(
-                    "{{\"ok\":true,\"sql\":{},\"result\":{},\"state\":{}}}",
+                    "{{\"ok\":true,\"sql\":{},\"durationMicros\":{},\"result\":{},\"state\":{}}}",
                     json_string(&sql),
+                    duration_micros,
                     result_set_json(&rs),
                     state
                 ),
                 Err(err) => format!(
-                    "{{\"ok\":false,\"sql\":{},\"error\":{},\"state\":{}}}",
+                    "{{\"ok\":false,\"sql\":{},\"durationMicros\":{},\"error\":{},\"state\":{}}}",
                     json_string(&sql),
+                    duration_micros,
                     json_string(&err.to_string()),
                     state
                 ),
             };
             write_response(&mut stream, 200, "application/json", &body).await
         }
+        ("POST", "/api/reset") => {
+            let body = match reset_demo(&executor, session.as_ref()).await {
+                Ok(state) => state,
+                Err(err) => format!("{{\"ok\":false,\"error\":{}}}", json_string(&err)),
+            };
+            write_response(&mut stream, 200, "application/json", &body).await
+        }
         _ => write_response(&mut stream, 404, "application/json", "{\"ok\":false}").await,
     }
+}
+
+async fn reset_demo(executor: &SqlExecutor, session: &Session) -> Result<String, String> {
+    if session.txn_id().is_some() {
+        executor
+            .execute_sql("ROLLBACK", session)
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+    let tables = executor
+        .snapshot_tables()
+        .await
+        .map_err(|err| err.to_string())?;
+    for table in tables {
+        executor
+            .execute_sql(&format!("DROP TABLE {}", table.meta.table_name), session)
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+    make_state_json(executor).await
 }
 
 async fn write_response(
@@ -260,4 +292,38 @@ fn parse_json_string_at(input: &str, quote_pos: usize) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kv_storage::{DiskPager, KvStorage};
+
+    #[tokio::test]
+    async fn reset_rolls_back_active_transaction_and_clears_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        let disk = Arc::new(DiskPager::open(dir.path().join("reset.db")).unwrap());
+        let storage = Arc::new(KvStorage::new(disk, 16));
+        let executor = SqlExecutor::new(storage);
+        executor.load_catalog().await.unwrap();
+        let session = Session::new();
+
+        executor
+            .execute_sql(
+                "CREATE TABLE demo (id INT PRIMARY KEY, value INT)",
+                &session,
+            )
+            .await
+            .unwrap();
+        executor.execute_sql("BEGIN", &session).await.unwrap();
+        executor
+            .execute_sql("INSERT INTO demo VALUES (1, 10)", &session)
+            .await
+            .unwrap();
+
+        let state = reset_demo(&executor, &session).await.unwrap();
+        assert!(session.txn_id().is_none());
+        assert!(executor.snapshot_tables().await.unwrap().is_empty());
+        assert_eq!(state, "{\"ok\":true,\"tables\":[]}");
+    }
 }

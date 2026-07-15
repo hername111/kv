@@ -263,6 +263,16 @@ button {
   background: #eef1f3;
 }
 
+.icon-button.danger {
+  color: #a53831;
+  background: #f6e8e6;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .top-grid {
   display: grid;
   grid-template-columns: minmax(440px, 1.15fr) minmax(360px, 0.85fr);
@@ -468,11 +478,20 @@ textarea {
 }
 
 .schema-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 8px 10px;
   border-radius: 7px;
   background: #eef4f0;
   font-weight: 800;
   border: 1px solid transparent;
+}
+
+.schema-strip span.index-count {
+  color: #315b73;
+  background: #e8f1f6;
+  border-color: #bfd4df;
 }
 
 .schema-strip span.pk {

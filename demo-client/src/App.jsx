@@ -5,12 +5,14 @@ import {
   CircleCheck,
   CircleX,
   Database,
+  KeyRound,
   Layers3,
   Play,
   RefreshCw,
   RotateCcw,
   Table2,
   TerminalSquare,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -32,6 +34,10 @@ const EXAMPLES = [
   {
     title: "更新记录",
     sql: "UPDATE users SET age = 29 WHERE id = 1;",
+  },
+  {
+    title: "创建二级索引",
+    sql: "CREATE INDEX idx_users_name ON users (name);",
   },
   {
     title: "事务操作",
@@ -79,6 +85,7 @@ function App() {
   const [lastStatement, setLastStatement] = useState("");
   const [connected, setConnected] = useState(null);
   const [duration, setDuration] = useState(null);
+  const [clearing, setClearing] = useState(false);
   const textareaRef = useRef(null);
 
   const tables = state.tables ?? [];
@@ -150,7 +157,6 @@ function App() {
     setResult(null);
     setDuration(null);
     setActiveStage(0);
-    const startedAt = performance.now();
 
     let lastPayload = null;
     try {
@@ -166,6 +172,7 @@ function App() {
         const payload = await response.json();
         lastPayload = payload;
         if (payload.state) setState(payload.state);
+        setDuration(payload.durationMicros ?? null);
         setConnected(true);
         setHistory((items) =>
           [
@@ -187,7 +194,6 @@ function App() {
       setConnected(false);
       setError(`请求失败：${requestError.message}`);
     } finally {
-      setDuration(Math.round(performance.now() - startedAt));
       setRunning(false);
       setActiveStage(-1);
     }
@@ -215,6 +221,29 @@ function App() {
     setHistory([]);
     setLastStatement("");
     setDuration(null);
+  }
+
+  async function clearDatabase() {
+    if (!window.confirm("清空所有演示表？此操作不可撤销。")) return;
+    setClearing(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE}/api/reset`, { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || "清空失败");
+      setState(data);
+      setSelectedTable("");
+      setResult(null);
+      setHistory([]);
+      setLastStatement("");
+      setDuration(null);
+      setConnected(true);
+    } catch (requestError) {
+      setError(`清空失败：${requestError.message}`);
+    } finally {
+      setClearing(false);
+    }
   }
 
   return (
@@ -284,6 +313,15 @@ function App() {
           <div className="actions">
             <button className="icon-button" onClick={refreshState} title="刷新数据库状态" aria-label="刷新数据库状态">
               <RefreshCw size={16} />
+            </button>
+            <button
+              className="icon-button danger"
+              onClick={clearDatabase}
+              disabled={clearing || running}
+              title="清空演示数据"
+              aria-label="清空演示数据"
+            >
+              <Trash2 size={16} />
             </button>
             <button className="ghost" onClick={resetDemo}>
               <RotateCcw size={16} />
@@ -393,12 +431,18 @@ function Pipeline({ activeStage, lastStatement }) {
 }
 
 function ResultView({ result, error, duration }) {
+  const formattedDuration =
+    duration === null
+      ? null
+      : duration >= 1000
+        ? `${(duration / 1000).toFixed(2)} ms`
+        : `${duration} us`;
   return (
     <section className="panel result-panel">
       <div className="panel-title">
         <TerminalSquare size={17} />
         <span>执行结果</span>
-        {duration !== null ? <small className="duration">{duration} ms</small> : null}
+        {formattedDuration ? <small className="duration">{formattedDuration}</small> : null}
       </div>
       {error ? <div className="error">{error}</div> : null}
       {!error && !result ? (
@@ -441,6 +485,10 @@ function StateView({ tables, selected, selectedTable, setSelectedTable }) {
             ))}
           </div>
           <div className="schema-strip">
+            <span className="index-count">
+              <KeyRound size={14} />
+              索引 {selected.meta.indexes}
+            </span>
             {selected.meta.columns.map((column, index) => (
               <span key={column.name} className={column.primaryKey ? "pk" : ""}>
                 {index === selected.meta.primaryKeyIndex ? "PK " : ""}

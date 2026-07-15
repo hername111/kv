@@ -12,3 +12,6 @@ kv-txn = { path = "../kv-txn" }
 kv-network = { path = "../kv-network" }
 async-trait.workspace = true
 tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

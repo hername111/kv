@@ -153,6 +153,7 @@ dependencies = [
  "kv-sql",
  "kv-storage",
  "kv-txn",
+ "tempfile",
  "tokio",
 ]
 

@@ -16,6 +16,16 @@ Web UI ──> demo HTTP API ┘
 4. `kv-storage` 把表映射到 B+Tree，并通过缓冲池和 Pager 访问 4KB 磁盘页。
 5. catalog 使用独立 B+Tree 保存表元数据，根页号记录在 superblock 中。
 
+## 本地演示接口
+
+`kv-server` 同时为 React 工作台提供三个本地 HTTP 接口：
+
+- `GET /api/state`：返回表元数据和记录快照。
+- `POST /api/query`：执行单条 SQL，返回结果、最新状态和执行器真实 `durationMicros`。
+- `POST /api/reset`：回滚演示会话中的活动事务并删除全部演示表，用于可重复录制。
+
+执行耗时在 Rust 服务内围绕 `execute_sql` 采集，不包含网络传输和前端执行链路动画。
+
 ## 磁盘布局
 
 数据库文件由固定 4096 字节页面组成。

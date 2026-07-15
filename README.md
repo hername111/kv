@@ -12,7 +12,7 @@ KV Database 是一个使用 Rust 实现的教学型关系数据库。项目包�
 - 事务：`BEGIN`、`COMMIT`、`ROLLBACK`，包含写集、MVCC 可见性和表级锁
 - 存储：4KB 页面、B+Tree、缓冲池、持久化 catalog、可恢复空闲页链表
 - 接入：MySQL Wire Protocol TCP 服务和本地 HTTP 演示接口
-- Web：SQL 编辑、执行链路、结果集、表结构、记录与执行历史
+- Web：SQL 编辑、执行链路、真实后端耗时、表结构、索引状态、记录与可重置演示环境
 
 当前限制请查看[架构文档](docs/architecture.md#当前边界)。
 
@@ -89,8 +89,11 @@ test_protocol.py 端到端协议和持久化验证
 
 更多资料：
 
+- [文档索引](docs/README.md)
 - [架构与设计依据](docs/architecture.md)
 - [开发与测试指南](docs/development.md)
+- [开源参考与差异](docs/open-source-references.md)
+- [视频录制指南](docs/video-recording-guide.md)
 
 ## License
 
