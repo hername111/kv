@@ -451,7 +451,7 @@ impl SqlExecutor {
                 let updated_meta = {
                     let mut tables = self.tables.lock().unwrap();
                     if let Some(tm) = tables.get_mut(&table) {
-                        tm.indexes.push(kv_common::types::IndexMeta {
+                        tm.indexes.push(IndexMeta {
                             index_id,
                             name: table.clone() + "_idx",
                             table_id: meta.table_id,

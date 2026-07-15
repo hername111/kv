@@ -1,11 +1,18 @@
 use kv_common::types::{ColumnDef, ResultSet, Row, Session, TableMeta, Value};
 use kv_sql::{SqlExecutor, TableSnapshot};
+use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 const INDEX_HTML: &str = "KV demo API is running. Start demo-client with npm run dev.";
+const MAX_BODY_SIZE: usize = 64 * 1024;
+
+#[derive(Deserialize)]
+struct QueryRequest {
+    sql: String,
+}
 
 pub async fn start_demo_http(addr: String, executor: Arc<SqlExecutor>) -> std::io::Result<()> {
     let listener = TcpListener::bind(&addr).await?;
@@ -50,7 +57,25 @@ async fn handle_http(
                 .flatten()
         })
         .unwrap_or(0);
+    if content_length > MAX_BODY_SIZE {
+        return write_response(
+            &mut stream,
+            413,
+            "application/json",
+            "{\"ok\":false,\"error\":\"request body too large\"}",
+        )
+        .await;
+    }
     let mut body = initial_body.as_bytes().to_vec();
+    if body.len() > MAX_BODY_SIZE {
+        return write_response(
+            &mut stream,
+            413,
+            "application/json",
+            "{\"ok\":false,\"error\":\"request body too large\"}",
+        )
+        .await;
+    }
     while body.len() < content_length {
         let mut chunk = vec![0u8; content_length - body.len()];
         let read = stream.read(&mut chunk).await?;
@@ -58,6 +83,15 @@ async fn handle_http(
             break;
         }
         body.extend_from_slice(&chunk[..read]);
+    }
+    if body.len() < content_length {
+        return write_response(
+            &mut stream,
+            400,
+            "application/json",
+            "{\"ok\":false,\"error\":\"incomplete request body\"}",
+        )
+        .await;
     }
     let body = String::from_utf8_lossy(&body);
 
@@ -72,7 +106,17 @@ async fn handle_http(
             write_response(&mut stream, 200, "application/json", &body).await
         }
         ("POST", "/api/query") => {
-            let sql = extract_json_string(&body, "sql").unwrap_or_default();
+            let request: QueryRequest = match serde_json::from_str(&body) {
+                Ok(request) => request,
+                Err(error) => {
+                    let body = format!(
+                        "{{\"ok\":false,\"error\":{}}}",
+                        json_string(&format!("invalid JSON request: {error}"))
+                    );
+                    return write_response(&mut stream, 400, "application/json", &body).await;
+                }
+            };
+            let sql = request.sql;
             let started_at = Instant::now();
             let result = executor.execute_sql(&sql, session.as_ref()).await;
             let duration_micros = started_at.elapsed().as_micros();
@@ -138,11 +182,12 @@ async fn write_response(
         200 => "OK",
         204 => "No Content",
         400 => "Bad Request",
+        413 => "Content Too Large",
         404 => "Not Found",
         _ => "OK",
     };
     let response = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: {}; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: content-type\r\nAccess-Control-Allow-Methods: GET,POST,OPTIONS\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 {} {}\r\nContent-Type: {}; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: content-type\r\nAccess-Control-Allow-Methods: GET,POST,OPTIONS\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n{}",
         status,
         reason,
         content_type,
@@ -261,43 +306,18 @@ fn json_string(value: &str) -> String {
     out
 }
 
-fn extract_json_string(body: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{}\"", key);
-    let key_pos = body.find(&needle)?;
-    let colon_pos = body[key_pos + needle.len()..].find(':')? + key_pos + needle.len();
-    let start_quote = body[colon_pos + 1..].find('"')? + colon_pos + 1;
-    parse_json_string_at(body, start_quote)
-}
-
-fn parse_json_string_at(input: &str, quote_pos: usize) -> Option<String> {
-    let mut escaped = false;
-    let mut out = String::new();
-    for ch in input[quote_pos + 1..].chars() {
-        if escaped {
-            match ch {
-                '"' => out.push('"'),
-                '\\' => out.push('\\'),
-                'n' => out.push('\n'),
-                'r' => out.push('\r'),
-                't' => out.push('\t'),
-                other => out.push(other),
-            }
-            escaped = false;
-        } else if ch == '\\' {
-            escaped = true;
-        } else if ch == '"' {
-            return Some(out);
-        } else {
-            out.push(ch);
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use kv_storage::{DiskPager, KvStorage};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn query_request_supports_json_escapes() {
+        let request: QueryRequest =
+            serde_json::from_str(r#"{"sql":"SELECT 'line\n\u4e2d\u6587'"}"#).unwrap();
+        assert_eq!(request.sql, "SELECT 'line\n中文'");
+    }
 
     #[tokio::test]
     async fn reset_rolls_back_active_transaction_and_clears_tables() {
@@ -325,5 +345,38 @@ mod tests {
         assert!(session.txn_id().is_none());
         assert!(executor.snapshot_tables().await.unwrap().is_empty());
         assert_eq!(state, "{\"ok\":true,\"tables\":[]}");
+    }
+
+    #[tokio::test]
+    async fn oversized_request_body_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let disk = Arc::new(DiskPager::open(dir.path().join("http-limit.db")).unwrap());
+        let executor = Arc::new(SqlExecutor::new(Arc::new(KvStorage::new(disk, 16))));
+        executor.load_catalog().await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            handle_http(stream, executor, Arc::new(Session::new()))
+                .await
+                .unwrap();
+        });
+
+        let mut client = TcpStream::connect(address).await.unwrap();
+        client
+            .write_all(
+                format!(
+                    "POST /api/query HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+                    MAX_BODY_SIZE + 1
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).await.unwrap();
+        server.await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 413 Content Too Large"));
+        assert!(response.contains("request body too large"));
     }
 }

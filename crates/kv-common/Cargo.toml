@@ -3,9 +3,13 @@ name = "kv-common"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+publish = false
 
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true
-bytes.workspace = true
 async-trait.workspace = true
+
+[lints]
+workspace = true

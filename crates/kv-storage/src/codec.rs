@@ -1,6 +1,6 @@
 // Row 序列化/反序列化
 use kv_common::types::{Row, Value};
-use std::io::{self, Error, ErrorKind};
+use std::io::{Error, ErrorKind};
 
 // Format per value:
 // tag: u8
@@ -48,7 +48,7 @@ fn serialize_value_into(val: &Value, buf: &mut Vec<u8>) {
     }
 }
 
-pub fn deserialize_row(mut data: &[u8]) -> Result<Row, io::Error> {
+pub fn deserialize_row(mut data: &[u8]) -> Result<Row, Error> {
     let mut values = Vec::new();
     while !data.is_empty() {
         let tag = data[0];

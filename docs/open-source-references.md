@@ -26,6 +26,7 @@
 | 系统分层 | BusTub 是完整教学 DBMS | 六个 Rust crate 分离 common/storage/txn/sql/network/server | 使用 Rust trait 约束层间依赖，并提供 MySQL 协议与 Web 双入口 |
 | 事务 | 成熟数据库具有 WAL、锁表和磁盘 MVCC | 写缓冲、事务管理、表锁和内存版本链 | 同时覆盖 commit、rollback 和事务内读己之写，明确不宣称完整 ACID 恢复 |
 | 可展示性 | 原项目主要面向 CLI 或测试 | React 工作台显示 SQL、结果、schema、索引数和执行链路 | API 返回后端真实微秒耗时，支持一键清理演示数据 |
+| 输入健壮性 | 成熟系统严格校验网络包和磁盘页 | MySQL 包重组、HTTP/JSON 限制、B+Tree 与槽页边界检查 | 分片、截断、超限、损坏页和缓存失效均有自动化测试 |
 
 ## 可复核代码位置
 

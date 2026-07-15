@@ -12,7 +12,7 @@ pub struct BufferPool {
 impl BufferPool {
     pub fn new(capacity: usize) -> Self {
         Self {
-            capacity,
+            capacity: capacity.max(1),
             map: Mutex::new(HashMap::new()),
             lru: Mutex::new(Vec::new()),
         }
@@ -43,6 +43,11 @@ impl BufferPool {
         lru.retain(|&id| id != page_id);
         lru.push(page_id);
         map.insert(page_id, data);
+    }
+
+    pub fn remove(&self, page_id: u64) {
+        self.map.lock().unwrap().remove(&page_id);
+        self.lru.lock().unwrap().retain(|&id| id != page_id);
     }
 }
 
@@ -80,7 +85,9 @@ impl Pager for BufferedPager {
     }
 
     async fn free_page(&self, page_id: u64) -> kv_common::error::KvResult<()> {
-        self.inner.free_page(page_id).await
+        self.inner.free_page(page_id).await?;
+        self.pool.remove(page_id);
+        Ok(())
     }
 
     async fn flush(&self) -> kv_common::error::KvResult<()> {
@@ -131,7 +138,8 @@ mod tests {
             *c += 1;
             Ok(id)
         }
-        async fn free_page(&self, _pid: u64) -> kv_common::error::KvResult<()> {
+        async fn free_page(&self, pid: u64) -> kv_common::error::KvResult<()> {
+            self.pages.lock().unwrap().remove(&pid);
             Ok(())
         }
         async fn flush(&self) -> kv_common::error::KvResult<()> {
@@ -163,5 +171,18 @@ mod tests {
         assert_eq!(bp.get(1).unwrap(), vec![1, 2, 3]);
         bp.put(3, vec![7, 8, 9]);
         assert!(bp.get(2).is_none());
+    }
+
+    #[tokio::test]
+    async fn freed_page_is_removed_from_cache() {
+        let mem = Arc::new(MemPager {
+            pages: Mutex::new(HashMap::new()),
+            counter: Mutex::new(1),
+        });
+        let pool = Arc::new(BufferPool::new(4));
+        let pager = BufferedPager::new(mem, pool);
+        pager.write_page(1, &[9u8; 4096]).await.unwrap();
+        pager.free_page(1).await.unwrap();
+        assert_eq!(pager.read_page(1).await.unwrap()[0], 0);
     }
 }

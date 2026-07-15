@@ -3,8 +3,11 @@ name = "kv-txn"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+publish = false
 
 [dependencies]
 kv-common = { path = "../kv-common" }
-kv-storage = { path = "../kv-storage" }
-async-trait.workspace = true
+
+[lints]
+workspace = true

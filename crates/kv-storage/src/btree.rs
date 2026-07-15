@@ -1,5 +1,6 @@
 // B+Tree (ORDER=4)：基于 Pager trait 的持久化 B+树索引
-use kv_common::error::KvResult;
+use crate::page::PAGE_SIZE;
+use kv_common::error::{KvError, KvResult};
 use kv_common::traits::Pager;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,7 +11,73 @@ const MAX_KEYS: usize = ORDER - 1;
 const FLAG_INTERNAL: u8 = 0;
 const FLAG_LEAF: u8 = 1;
 
-fn encode_internal_node(_page_id: u64, keys: &[Vec<u8>], children: &[u64]) -> Vec<u8> {
+type NodeKeys = Vec<Vec<u8>>;
+type NodeValues = Vec<Vec<u8>>;
+type DecodedLeaf = (NodeKeys, NodeValues, u64);
+
+fn finish_page(mut buffer: Vec<u8>) -> KvResult<Vec<u8>> {
+    if buffer.len() > PAGE_SIZE {
+        return Err(KvError::InvalidQuery(format!(
+            "B+Tree node requires {} bytes, page size is {} bytes",
+            buffer.len(),
+            PAGE_SIZE
+        )));
+    }
+    buffer.resize(PAGE_SIZE, 0);
+    Ok(buffer)
+}
+
+fn take_bytes<'a>(data: &'a [u8], position: &mut usize, len: usize) -> KvResult<&'a [u8]> {
+    let end = position
+        .checked_add(len)
+        .ok_or_else(|| KvError::Internal("B+Tree page offset overflow".to_string()))?;
+    let bytes = data
+        .get(*position..end)
+        .ok_or_else(|| KvError::Internal("truncated or corrupt B+Tree page".to_string()))?;
+    *position = end;
+    Ok(bytes)
+}
+
+fn read_u16(data: &[u8], position: &mut usize) -> KvResult<u16> {
+    let bytes: [u8; 2] = take_bytes(data, position, 2)?
+        .try_into()
+        .map_err(|_| KvError::Internal("invalid u16 field in B+Tree page".to_string()))?;
+    Ok(u16::from_le_bytes(bytes))
+}
+
+fn read_u32(data: &[u8], position: &mut usize) -> KvResult<u32> {
+    let bytes: [u8; 4] = take_bytes(data, position, 4)?
+        .try_into()
+        .map_err(|_| KvError::Internal("invalid u32 field in B+Tree page".to_string()))?;
+    Ok(u32::from_le_bytes(bytes))
+}
+
+fn read_u64(data: &[u8], position: &mut usize) -> KvResult<u64> {
+    let bytes: [u8; 8] = take_bytes(data, position, 8)?
+        .try_into()
+        .map_err(|_| KvError::Internal("invalid u64 field in B+Tree page".to_string()))?;
+    Ok(u64::from_le_bytes(bytes))
+}
+
+fn page_flag(data: &[u8]) -> KvResult<u8> {
+    match data.first().copied() {
+        Some(FLAG_INTERNAL) => Ok(FLAG_INTERNAL),
+        Some(FLAG_LEAF) => Ok(FLAG_LEAF),
+        Some(flag) => Err(KvError::Internal(format!(
+            "unknown B+Tree page type: {flag}"
+        ))),
+        None => Err(KvError::Internal(
+            "empty B+Tree page returned by pager".to_string(),
+        )),
+    }
+}
+
+fn encode_internal_node(keys: &[Vec<u8>], children: &[u64]) -> KvResult<Vec<u8>> {
+    if children.len() != keys.len() + 1 {
+        return Err(KvError::Internal(
+            "B+Tree internal node has an invalid child count".to_string(),
+        ));
+    }
     let mut buf = vec![FLAG_INTERNAL];
     buf.extend(&(keys.len() as u16).to_le_bytes());
     for k in keys {
@@ -20,11 +87,15 @@ fn encode_internal_node(_page_id: u64, keys: &[Vec<u8>], children: &[u64]) -> Ve
     for &c in children {
         buf.extend(&c.to_le_bytes());
     }
-    buf.resize(4096, 0);
-    buf
+    finish_page(buf)
 }
 
-fn encode_leaf_node(keys: &[Vec<u8>], values: &[Vec<u8>], next: u64) -> Vec<u8> {
+fn encode_leaf_node(keys: &[Vec<u8>], values: &[Vec<u8>], next: u64) -> KvResult<Vec<u8>> {
+    if keys.len() != values.len() {
+        return Err(KvError::Internal(
+            "B+Tree leaf has different key and value counts".to_string(),
+        ));
+    }
     let mut buf = vec![FLAG_LEAF];
     buf.extend(&(keys.len() as u16).to_le_bytes());
     for k in keys {
@@ -36,47 +107,47 @@ fn encode_leaf_node(keys: &[Vec<u8>], values: &[Vec<u8>], next: u64) -> Vec<u8> 
         buf.extend(v);
     }
     buf.extend(&next.to_le_bytes());
-    buf.resize(4096, 0);
-    buf
+    finish_page(buf)
 }
 
-fn decode_leaf_entry(data: &[u8]) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, u64) {
-    let num_keys = u16::from_le_bytes(data[1..3].try_into().unwrap()) as usize;
-    let mut pos = 3;
+fn decode_leaf_entry(data: &[u8]) -> KvResult<DecodedLeaf> {
+    if data.first() != Some(&FLAG_LEAF) {
+        return Err(KvError::Internal("expected B+Tree leaf page".to_string()));
+    }
+    let mut pos = 1;
+    let num_keys = read_u16(data, &mut pos)? as usize;
     let mut keys = Vec::with_capacity(num_keys);
     for _ in 0..num_keys {
-        let len = u16::from_le_bytes(data[pos..pos + 2].try_into().unwrap()) as usize;
-        pos += 2;
-        keys.push(data[pos..pos + len].to_vec());
-        pos += len;
+        let len = read_u16(data, &mut pos)? as usize;
+        keys.push(take_bytes(data, &mut pos, len)?.to_vec());
     }
     let mut values = Vec::with_capacity(num_keys);
     for _ in 0..num_keys {
-        let len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
-        pos += 4;
-        values.push(data[pos..pos + len].to_vec());
-        pos += len;
+        let len = read_u32(data, &mut pos)? as usize;
+        values.push(take_bytes(data, &mut pos, len)?.to_vec());
     }
-    let next = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
-    (keys, values, next)
+    let next = read_u64(data, &mut pos)?;
+    Ok((keys, values, next))
 }
 
-fn decode_internal_entry(data: &[u8]) -> (Vec<Vec<u8>>, Vec<u64>) {
-    let num_keys = u16::from_le_bytes(data[1..3].try_into().unwrap()) as usize;
-    let mut pos = 3;
+fn decode_internal_entry(data: &[u8]) -> KvResult<(Vec<Vec<u8>>, Vec<u64>)> {
+    if data.first() != Some(&FLAG_INTERNAL) {
+        return Err(KvError::Internal(
+            "expected B+Tree internal page".to_string(),
+        ));
+    }
+    let mut pos = 1;
+    let num_keys = read_u16(data, &mut pos)? as usize;
     let mut keys = Vec::with_capacity(num_keys);
     for _ in 0..num_keys {
-        let len = u16::from_le_bytes(data[pos..pos + 2].try_into().unwrap()) as usize;
-        pos += 2;
-        keys.push(data[pos..pos + len].to_vec());
-        pos += len;
+        let len = read_u16(data, &mut pos)? as usize;
+        keys.push(take_bytes(data, &mut pos, len)?.to_vec());
     }
     let mut children = Vec::with_capacity(num_keys + 1);
     for _ in 0..=num_keys {
-        children.push(u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap()));
-        pos += 8;
+        children.push(read_u64(data, &mut pos)?);
     }
-    (keys, children)
+    Ok((keys, children))
 }
 
 fn find_key_index(keys: &[Vec<u8>], target: &[u8]) -> usize {
@@ -93,7 +164,7 @@ pub struct BPlusTree {
 impl BPlusTree {
     pub async fn new(pager: Arc<dyn Pager>) -> KvResult<Self> {
         let root_page_id = pager.allocate_page().await?;
-        let leaf = encode_leaf_node(&[], &[], 0);
+        let leaf = encode_leaf_node(&[], &[], 0)?;
         pager.write_page(root_page_id, &leaf).await?;
         Ok(BPlusTree {
             pager,
@@ -114,10 +185,9 @@ impl BPlusTree {
             .await?;
         if let (Some(promo_key), Some(new_child)) = result {
             let new_root = encode_internal_node(
-                0,
                 &[promo_key],
                 &[self.root_page_id.load(Ordering::Relaxed), new_child],
-            );
+            )?;
             let new_root_id = self.pager.allocate_page().await?;
             self.pager.write_page(new_root_id, &new_root).await?;
             self.root_page_id.store(new_root_id, Ordering::Relaxed);
@@ -132,14 +202,14 @@ impl BPlusTree {
         value: &[u8],
     ) -> KvResult<(Option<Vec<u8>>, Option<u64>)> {
         let data = self.pager.read_page(page_id).await?;
-        let flag = data[0];
+        let flag = page_flag(&data)?;
 
         if flag == FLAG_LEAF {
-            let (mut keys, mut values, next) = decode_leaf_entry(&data);
+            let (mut keys, mut values, next) = decode_leaf_entry(&data)?;
             let idx = keys.binary_search(&key.to_vec()).unwrap_or_else(|e| e);
             if idx < keys.len() && keys[idx] == key {
                 values[idx] = value.to_vec();
-                let new_data = encode_leaf_node(&keys, &values, next);
+                let new_data = encode_leaf_node(&keys, &values, next)?;
                 self.pager.write_page(page_id, &new_data).await?;
                 return Ok((None, None));
             }
@@ -153,19 +223,19 @@ impl BPlusTree {
                 let promo = right_keys[0].clone();
 
                 let right_id = self.pager.allocate_page().await?;
-                let right_data = encode_leaf_node(&right_keys, &right_vals, next);
+                let right_data = encode_leaf_node(&right_keys, &right_vals, next)?;
                 self.pager.write_page(right_id, &right_data).await?;
 
-                let left_data = encode_leaf_node(&keys, &values, right_id);
+                let left_data = encode_leaf_node(&keys, &values, right_id)?;
                 self.pager.write_page(page_id, &left_data).await?;
                 Ok((Some(promo), Some(right_id)))
             } else {
-                let new_data = encode_leaf_node(&keys, &values, next);
+                let new_data = encode_leaf_node(&keys, &values, next)?;
                 self.pager.write_page(page_id, &new_data).await?;
                 Ok((None, None))
             }
         } else {
-            let (keys, children) = decode_internal_entry(&data);
+            let (keys, children) = decode_internal_entry(&data)?;
             let child_idx = find_key_index(&keys, key);
             let child_page = children[child_idx];
 
@@ -174,7 +244,7 @@ impl BPlusTree {
 
             match (maybe_promo, maybe_new_child) {
                 (Some(promo_key), Some(new_child_id)) => {
-                    let (mut int_keys, mut int_children) = decode_internal_entry(&data);
+                    let (mut int_keys, mut int_children) = decode_internal_entry(&data)?;
                     let insert_idx = int_keys.binary_search(&promo_key).unwrap_or_else(|e| e);
                     int_keys.insert(insert_idx, promo_key);
                     int_children.insert(insert_idx + 1, new_child_id);
@@ -187,14 +257,14 @@ impl BPlusTree {
                         let right_children = int_children.split_off(mid + 1);
 
                         let right_id = self.pager.allocate_page().await?;
-                        let right_data = encode_internal_node(0, &right_keys, &right_children);
+                        let right_data = encode_internal_node(&right_keys, &right_children)?;
                         self.pager.write_page(right_id, &right_data).await?;
 
-                        let left_data = encode_internal_node(0, &int_keys, &int_children);
+                        let left_data = encode_internal_node(&int_keys, &int_children)?;
                         self.pager.write_page(page_id, &left_data).await?;
                         Ok((Some(promo), Some(right_id)))
                     } else {
-                        let new_data = encode_internal_node(0, &int_keys, &int_children);
+                        let new_data = encode_internal_node(&int_keys, &int_children)?;
                         self.pager.write_page(page_id, &new_data).await?;
                         Ok((None, None))
                     }
@@ -208,14 +278,14 @@ impl BPlusTree {
         let mut page_id = self.root_page_id.load(Ordering::Relaxed);
         loop {
             let data = self.pager.read_page(page_id).await?;
-            if data[0] == FLAG_LEAF {
-                let (keys, values, _) = decode_leaf_entry(&data);
+            if page_flag(&data)? == FLAG_LEAF {
+                let (keys, values, _) = decode_leaf_entry(&data)?;
                 return Ok(keys
                     .iter()
                     .position(|k| k == key)
                     .map(|i| values[i].clone()));
             }
-            let (keys, children) = decode_internal_entry(&data);
+            let (keys, children) = decode_internal_entry(&data)?;
             page_id = children[find_key_index(&keys, key)];
         }
     }
@@ -224,10 +294,10 @@ impl BPlusTree {
         let mut page_id = self.root_page_id.load(Ordering::Relaxed);
         loop {
             let data = self.pager.read_page(page_id).await?;
-            if data[0] == FLAG_LEAF {
+            if page_flag(&data)? == FLAG_LEAF {
                 break;
             }
-            let (keys, children) = decode_internal_entry(&data);
+            let (keys, children) = decode_internal_entry(&data)?;
             page_id = children[find_key_index(&keys, start)];
         }
 
@@ -235,7 +305,7 @@ impl BPlusTree {
         let mut current_id = page_id;
         loop {
             let data = self.pager.read_page(current_id).await?;
-            let (keys, values, next) = decode_leaf_entry(&data);
+            let (keys, values, next) = decode_leaf_entry(&data)?;
             for (k, v) in keys.iter().zip(values.iter()) {
                 if k.as_slice() < start {
                     continue;
@@ -261,8 +331,8 @@ impl BPlusTree {
             .pager
             .read_page(self.root_page_id.load(Ordering::Relaxed))
             .await?;
-        if data[0] == FLAG_INTERNAL {
-            let (keys, children) = decode_internal_entry(&data);
+        if page_flag(&data)? == FLAG_INTERNAL {
+            let (keys, children) = decode_internal_entry(&data)?;
             if keys.is_empty() && !children.is_empty() {
                 self.pager
                     .free_page(self.root_page_id.load(Ordering::Relaxed))
@@ -275,18 +345,18 @@ impl BPlusTree {
 
     async fn delete_recursive(&self, page_id: u64, key: &[u8]) -> KvResult<bool> {
         let data = self.pager.read_page(page_id).await?;
-        if data[0] == FLAG_LEAF {
-            let (mut keys, mut values, next) = decode_leaf_entry(&data);
+        if page_flag(&data)? == FLAG_LEAF {
+            let (mut keys, mut values, next) = decode_leaf_entry(&data)?;
             if let Some(idx) = keys.iter().position(|k| k == key) {
                 keys.remove(idx);
                 values.remove(idx);
-                let new_data = encode_leaf_node(&keys, &values, next);
+                let new_data = encode_leaf_node(&keys, &values, next)?;
                 self.pager.write_page(page_id, &new_data).await?;
                 return Ok(true);
             }
             Ok(false)
         } else {
-            let (keys, children) = decode_internal_entry(&data);
+            let (keys, children) = decode_internal_entry(&data)?;
             let child_idx = find_key_index(&keys, key);
             Box::pin(self.delete_recursive(children[child_idx], key)).await
         }
@@ -394,5 +464,24 @@ mod tests {
         for i in 0..10u8 {
             assert_eq!(tree.search(&[i]).await.unwrap().unwrap(), &[i; 10]);
         }
+    }
+
+    #[tokio::test]
+    async fn test_oversized_entry_is_rejected_without_corrupting_tree() {
+        let tree = make_tree().await;
+        let oversized = vec![0u8; PAGE_SIZE];
+        assert!(tree.insert(b"key", &oversized).await.is_err());
+        assert_eq!(tree.search(b"key").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_corrupt_page_returns_error() {
+        let tree = make_tree().await;
+        let root = tree.root_page_id.load(Ordering::Relaxed);
+        tree.pager
+            .write_page(root, &[FLAG_LEAF, 1, 0, 0xff, 0xff])
+            .await
+            .unwrap();
+        assert!(tree.search(b"key").await.is_err());
     }
 }

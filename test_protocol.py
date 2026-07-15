@@ -177,6 +177,12 @@ class KVClient:
 PASS = 0
 FAIL = 0
 TEST_INDEX = 0
+USE_COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+
+
+def colorize(text, code):
+    """仅在交互终端输出 ANSI 颜色。"""
+    return f"\033[{code}m{text}\033[0m" if USE_COLOR else text
 
 
 def test(name, condition, detail=""):
@@ -185,10 +191,10 @@ def test(name, condition, detail=""):
     TEST_INDEX += 1
     if condition:
         PASS += 1
-        print(f"  [{TEST_INDEX}] \033[92mPASS\033[0m {name}")
+        print(f"  [{TEST_INDEX}] {colorize('PASS', 92)} {name}")
     else:
         FAIL += 1
-        print(f"  [{TEST_INDEX}] \033[91mFAIL\033[0m {name}  {detail}")
+        print(f"  [{TEST_INDEX}] {colorize('FAIL', 91)} {name}  {detail}")
 
 
 def test_raises(name, result, expected_msg_substring=""):
@@ -234,21 +240,21 @@ def test_rs(name, result, expected_rows=None, expected_cols=None):
 
 def section(title):
     """打印测试小节标题。"""
-    print(f"\n{'─' * 60}")
+    print(f"\n{'-' * 60}")
     print(f"  {title}")
-    print(f"{'─' * 60}")
+    print(f"{'-' * 60}")
 
 
 def summary():
     """打印测试汇总。"""
     total = PASS + FAIL
-    print(f"\n{'═' * 60}")
-    print(f"  Total: {total}, \033[92m{PASS} passed\033[0m", end="")
+    print(f"\n{'=' * 60}")
+    print(f"  Total: {total}, {colorize(f'{PASS} passed', 92)}", end="")
     if FAIL > 0:
-        print(f", \033[91m{FAIL} failed\033[0m")
+        print(f", {colorize(f'{FAIL} failed', 91)}")
     else:
         print("")
-    print(f"{'═' * 60}")
+    print(f"{'=' * 60}")
     return FAIL == 0
 
 

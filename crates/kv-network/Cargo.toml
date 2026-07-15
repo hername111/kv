@@ -3,9 +3,13 @@ name = "kv-network"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+publish = false
 
 [dependencies]
 kv-common = { path = "../kv-common" }
 tokio = { workspace = true, features = ["net", "io-util"] }
 bytes.workspace = true
-async-trait.workspace = true
+
+[lints]
+workspace = true

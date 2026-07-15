@@ -72,6 +72,9 @@ npm run build
 python test_protocol.py
 ```
 
+CI 对每次推送和合并请求执行相同检查，并额外验证前端生产构建。依赖更新由 Dependabot 定期
+检查；Rust workspace 禁止不安全代码、未完成占位宏和调试宏进入代码。
+
 ## 仓库结构
 
 ```text
@@ -94,6 +97,8 @@ test_protocol.py 端到端协议和持久化验证
 - [开发与测试指南](docs/development.md)
 - [开源参考与差异](docs/open-source-references.md)
 - [视频录制指南](docs/video-recording-guide.md)
+- [贡献指南](CONTRIBUTING.md)
+- [安全说明](SECURITY.md)
 
 ## License
 

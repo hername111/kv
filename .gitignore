@@ -1,10 +1,12 @@
 /target/
 **/*.rs.bk
 *.pdb
-.superpowers/
 /demo-client/node_modules/
 /demo-client/dist/
 /kv_data/
-/.claude/
+__pycache__/
+*.py[cod]
+.idea/
+.vscode/*.local.json
 .DS_Store
 Thumbs.db

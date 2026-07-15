@@ -4,12 +4,19 @@ use std::io;
 
 pub const PROTOCOL_VERSION: u8 = 10;
 pub const SERVER_VERSION: &str = "5.7.32-kv";
+pub const MAX_PACKET_SIZE: usize = 8 * 1024 * 1024;
 
 pub fn read_packet(buf: &mut BytesMut) -> io::Result<Option<Vec<u8>>> {
     if buf.len() < 4 {
         return Ok(None);
     }
     let payload_len = buf[0] as usize | ((buf[1] as usize) << 8) | ((buf[2] as usize) << 16);
+    if payload_len > MAX_PACKET_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "MySQL packet exceeds the configured limit",
+        ));
+    }
     let total = 4 + payload_len;
     if buf.len() < total {
         return Ok(None);
@@ -161,6 +168,32 @@ mod tests {
         let p = write_packet(b"hi", 5);
         let mut b = BytesMut::from(&p[..]);
         assert_eq!(read_packet(&mut b).unwrap().unwrap(), b"hi");
+    }
+    #[test]
+    fn test_incomplete_packet_waits_for_more_data() {
+        let packet = write_packet(b"fragmented", 0);
+        let mut buffer = BytesMut::from(&packet[..6]);
+        assert!(read_packet(&mut buffer).unwrap().is_none());
+        buffer.extend_from_slice(&packet[6..]);
+        assert_eq!(
+            read_packet(&mut buffer).unwrap(),
+            Some(b"fragmented".to_vec())
+        );
+    }
+    #[test]
+    fn test_oversized_packet_is_rejected() {
+        let oversized = MAX_PACKET_SIZE + 1;
+        let header = [
+            (oversized & 0xff) as u8,
+            ((oversized >> 8) & 0xff) as u8,
+            ((oversized >> 16) & 0xff) as u8,
+            0,
+        ];
+        let mut buffer = BytesMut::from(&header[..]);
+        assert_eq!(
+            read_packet(&mut buffer).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
     #[test]
     fn test_result_set() {

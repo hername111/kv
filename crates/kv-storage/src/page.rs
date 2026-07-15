@@ -15,7 +15,7 @@ pub struct PageHeader {
 impl PageHeader {
     pub const SIZE: usize = 16;
 
-    pub fn encode(&self) -> [u8; Self::SIZE] {
+    fn encode(&self) -> [u8; Self::SIZE] {
         let mut buf = [0u8; Self::SIZE];
         buf[0..8].copy_from_slice(&self.page_id.to_le_bytes());
         buf[8..10].copy_from_slice(&self.tuple_count.to_le_bytes());
@@ -25,7 +25,7 @@ impl PageHeader {
         buf
     }
 
-    pub fn decode(data: &[u8]) -> Self {
+    fn decode(data: &[u8]) -> Self {
         let page_id = u64::from_le_bytes(data[0..8].try_into().unwrap());
         let tuple_count = u16::from_le_bytes(data[8..10].try_into().unwrap());
         let free_start = u16::from_le_bytes(data[10..12].try_into().unwrap());
@@ -42,7 +42,7 @@ impl PageHeader {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SlotEntry {
+struct SlotEntry {
     pub offset: u16,
     pub length: u16,
     pub flags: u8,
@@ -73,7 +73,7 @@ impl SlotEntry {
 
 #[derive(Debug, Clone)]
 pub struct SlottedPage {
-    pub data: [u8; PAGE_SIZE],
+    data: [u8; PAGE_SIZE],
 }
 
 impl Default for SlottedPage {
@@ -108,11 +108,17 @@ impl SlottedPage {
         }
         let mut arr = [0u8; PAGE_SIZE];
         arr.copy_from_slice(data);
-        Ok(SlottedPage { data: arr })
+        let page = SlottedPage { data: arr };
+        page.validate_layout()?;
+        Ok(page)
     }
 
     pub fn header(&self) -> PageHeader {
         PageHeader::decode(&self.data[..PageHeader::SIZE])
+    }
+
+    pub fn as_bytes(&self) -> &[u8; PAGE_SIZE] {
+        &self.data
     }
 
     fn set_header(&mut self, header: &PageHeader) {
@@ -122,13 +128,19 @@ impl SlottedPage {
 
     pub fn free_space(&self) -> u16 {
         let h = self.header();
-        h.free_end - h.free_start - h.tuple_count * SlotEntry::SIZE as u16
+        let slot_bytes = h.tuple_count.saturating_mul(SlotEntry::SIZE as u16);
+        h.free_end
+            .saturating_sub(h.free_start)
+            .saturating_sub(slot_bytes)
     }
 
     pub fn insert(&mut self, tuple: &[u8]) -> io::Result<u16> {
         let mut h = self.header();
-        let required = tuple.len() as u16 + SlotEntry::SIZE as u16;
-        if self.free_space() < required {
+        let required = tuple
+            .len()
+            .checked_add(SlotEntry::SIZE)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "tuple size overflow"))?;
+        if required > u16::MAX as usize || (self.free_space() as usize) < required {
             return Err(Error::new(ErrorKind::OutOfMemory, "page full"));
         }
 
@@ -156,10 +168,21 @@ impl SlottedPage {
             return Err(Error::new(ErrorKind::NotFound, "slot index out of range"));
         }
         let slot_off = h.free_start as usize + slot_idx as usize * SlotEntry::SIZE;
-        let slot = SlotEntry::decode(&self.data[slot_off..slot_off + SlotEntry::SIZE]);
+        let slot_end = slot_off
+            .checked_add(SlotEntry::SIZE)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "slot offset overflow"))?;
+        let slot_bytes = self
+            .data
+            .get(slot_off..slot_end)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "slot outside page"))?;
+        let slot = SlotEntry::decode(slot_bytes);
         let start = slot.offset as usize;
-        let end = start + slot.length as usize;
-        Ok(&self.data[start..end])
+        let end = start
+            .checked_add(slot.length as usize)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "tuple offset overflow"))?;
+        self.data
+            .get(start..end)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "tuple outside page"))
     }
 
     pub fn iter_tuples(&self) -> SlotIter<'_> {
@@ -167,6 +190,47 @@ impl SlottedPage {
             page: self,
             current: 0,
         }
+    }
+
+    fn validate_layout(&self) -> io::Result<()> {
+        let header = self.header();
+        let free_start = header.free_start as usize;
+        let free_end = header.free_end as usize;
+        if free_start < PageHeader::SIZE || free_end > PAGE_SIZE || free_start > free_end {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "invalid slotted-page free-space bounds",
+            ));
+        }
+        let slots_size = header
+            .tuple_count
+            .checked_mul(SlotEntry::SIZE as u16)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "slot directory overflow"))?
+            as usize;
+        let slots_end = free_start
+            .checked_add(slots_size)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "slot directory overflow"))?;
+        if slots_end > free_end {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "slot directory overlaps tuple data",
+            ));
+        }
+        for slot_index in 0..header.tuple_count as usize {
+            let offset = free_start + slot_index * SlotEntry::SIZE;
+            let slot = SlotEntry::decode(&self.data[offset..offset + SlotEntry::SIZE]);
+            let tuple_start = slot.offset as usize;
+            let tuple_end = tuple_start
+                .checked_add(slot.length as usize)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidData, "tuple offset overflow"))?;
+            if tuple_start < free_end || tuple_end > PAGE_SIZE {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "slot points outside tuple data area",
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -240,10 +304,26 @@ mod tests {
     fn test_encode_decode_roundtrip() {
         let mut page = SlottedPage::new(99);
         page.insert(b"test data").unwrap();
-        let bytes = page.data.to_vec();
+        let bytes = page.as_bytes().to_vec();
         let restored = SlottedPage::from_bytes(&bytes).unwrap();
         assert_eq!(restored.header().page_id, 99);
         assert_eq!(restored.header().tuple_count, 1);
         assert_eq!(restored.get(0).unwrap(), b"test data");
+    }
+
+    #[test]
+    fn test_rejects_corrupt_slot_directory() {
+        let mut bytes = *SlottedPage::new(1).as_bytes();
+        bytes[8..10].copy_from_slice(&u16::MAX.to_le_bytes());
+        assert!(SlottedPage::from_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_rejects_slot_outside_tuple_area() {
+        let mut page = SlottedPage::new(1);
+        page.insert(b"valid").unwrap();
+        let mut bytes = *page.as_bytes();
+        bytes[PageHeader::SIZE..PageHeader::SIZE + 2].copy_from_slice(&1u16.to_le_bytes());
+        assert!(SlottedPage::from_bytes(&bytes).is_err());
     }
 }

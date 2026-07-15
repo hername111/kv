@@ -17,7 +17,7 @@ class ErrorBoundary extends React.Component {
     if (this.state.error) {
       return (
         <main className="fatal">
-          <h1>KV Demo failed to start</h1>
+          <h1>KV Database 启动失败</h1>
           <p>{this.state.error.message}</p>
         </main>
       );
@@ -29,7 +29,14 @@ class ErrorBoundary extends React.Component {
 window.addEventListener("error", (event) => {
   const root = document.getElementById("root");
   if (root && root.childElementCount === 0) {
-    root.innerHTML = `<main class="fatal"><h1>KV Demo failed to start</h1><p>${event.message}</p></main>`;
+    const main = document.createElement("main");
+    const title = document.createElement("h1");
+    const detail = document.createElement("p");
+    main.className = "fatal";
+    title.textContent = "KV Database 启动失败";
+    detail.textContent = event.message;
+    main.append(title, detail);
+    root.replaceChildren(main);
   }
 });
 
