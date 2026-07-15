@@ -28,7 +28,7 @@
 
 ### 环境要求
 
-- Rust `1.94.0`（由 `rust-toolchain.toml` 固定，需安装 rustup）
+- Rust `1.94.0` 或更新版本（`Cargo.toml` 声明最低版本）
 - Node.js `20+` 与 npm `10+`（仅运行 Web 工作台需要）
 - Python `3.10+`（运行端到端协议测试需要）
 - 可选：MySQL CLI，用于直接连接协议服务
@@ -137,12 +137,12 @@ test_protocol.py  端到端协议与持久化测试
 
 - [文档索引](docs/README.md)
 - [架构与设计依据](docs/architecture.md)
+- [本地 HTTP API](docs/api-reference.md)
 - [开发与测试指南](docs/development.md)
 - [开源参考与差异](docs/open-source-references.md)
 - [源码对照录制卡](docs/source-code-comparison.md)
 - [3 分钟视频录制指南](docs/video-recording-guide.md)
-- [贡献指南](CONTRIBUTING.md)
-- [安全说明](SECURITY.md)
+- [提交前检查清单](docs/submission-checklist.md)
 
 ## 当前边界
 
