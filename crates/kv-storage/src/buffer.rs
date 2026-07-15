@@ -1,8 +1,9 @@
-// Buffer Pool：线程安全的 LRU 页缓存
+//! 写穿式 LRU 页面缓存。
 use kv_common::traits::Pager;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// 线程安全的页面缓存；容量至少为一页。
 pub struct BufferPool {
     capacity: usize,
     map: Mutex<HashMap<u64, Vec<u8>>>,
@@ -51,7 +52,9 @@ impl BufferPool {
     }
 }
 
-/// Pager 包装器：在 BufferPool 中缓存页，减少磁盘 I/O
+/// 在 [`Pager`] 前增加缓存的写穿式适配器。
+///
+/// 释放页时必须同时失效缓存，避免页号复用后返回旧内容。
 pub struct BufferedPager {
     inner: Arc<dyn Pager>,
     pool: Arc<BufferPool>,

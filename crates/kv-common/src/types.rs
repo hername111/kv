@@ -1,12 +1,10 @@
-// 基础类型定义：Row, Value, Column, DataType, Schema 等
+//! SQL 值、行、模式、目录元数据和会话状态。
 use serde::{Deserialize, Serialize};
 
-// ===== 类型别名 =====
 pub type TableId = u64;
 pub type ColumnId = u64;
 pub type IndexId = u64;
 
-// ===== 数据类型 =====
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DataType {
     Int,
@@ -20,7 +18,6 @@ pub enum DataType {
     Timestamp,
 }
 
-// ===== 列定义 =====
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Column {
     pub name: String,
@@ -38,7 +35,6 @@ pub struct ColumnDef {
     pub is_primary_key: bool,
 }
 
-// ===== 值定义 =====
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Null,
@@ -60,7 +56,6 @@ impl std::fmt::Display for Value {
     }
 }
 
-// ===== 行和模式 =====
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Row {
     pub values: Vec<Value>,
@@ -98,7 +93,6 @@ impl Schema {
     }
 }
 
-// ===== 表元数据 =====
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableMeta {
     pub table_id: TableId,
@@ -119,7 +113,6 @@ impl TableMeta {
     }
 }
 
-// ===== 索引元数据 =====
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexMeta {
     pub index_id: IndexId,
@@ -129,7 +122,6 @@ pub struct IndexMeta {
     pub is_unique: bool,
 }
 
-// ===== 结果集 =====
 #[derive(Debug, Clone)]
 pub struct ResultSet {
     pub columns: Vec<ColumnDef>,
@@ -167,7 +159,6 @@ impl ResultSet {
     }
 }
 
-// ===== 会话信息 =====
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug)]
@@ -200,7 +191,6 @@ impl Default for Session {
     }
 }
 
-// ===== 隔离级别 =====
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum IsolationLevel {
     #[default]

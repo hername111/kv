@@ -1,3 +1,5 @@
+//! 将表目录和索引映射到独立 B+Tree 的存储引擎。
+
 use crate::btree::BPlusTree;
 use crate::buffer::{BufferPool, BufferedPager};
 use async_trait::async_trait;
@@ -8,11 +10,13 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Index metadata stored alongside the B+Tree
 struct IndexEntry {
     tree: Arc<BPlusTree>,
 }
 
+/// 数据库的持久化存储实现。
+///
+/// 表数据、目录和二级索引使用独立 B+Tree，共享同一缓冲页面管理器。
 pub struct KvStorage {
     pager: Arc<dyn Pager>,
     trees: Mutex<HashMap<TableId, Arc<BPlusTree>>>,
@@ -23,6 +27,7 @@ pub struct KvStorage {
 }
 
 impl KvStorage {
+    /// 使用给定页面后端和缓存容量创建存储实例。
     pub fn new(pager: Arc<dyn Pager>, buffer_capacity: usize) -> Self {
         let buffer_pool = Arc::new(BufferPool::new(buffer_capacity));
         let pager = Arc::new(BufferedPager::new(pager, buffer_pool));
@@ -43,7 +48,6 @@ impl KvStorage {
                 return Ok(tree.clone());
             }
         }
-        // Check if meta tree root page ID was persisted in superblock
         let meta_root = self.pager.get_meta_root().await?;
         let tree = if meta_root != 0 {
             BPlusTree::open(self.pager.clone(), meta_root)
@@ -70,7 +74,7 @@ impl KvStorage {
             })
     }
 
-    /// Build a secondary index by scanning the base table (called externally by executor)
+    /// 扫描已有记录并批量构建二级索引。
     pub async fn build_index(
         &self,
         index_id: IndexId,

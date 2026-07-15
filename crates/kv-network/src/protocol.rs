@@ -1,4 +1,4 @@
-// MySQL Wire Protocol
+//! MySQL 5.7 文本协议所需的数据包编码。
 use bytes::BytesMut;
 use std::io;
 
@@ -6,6 +6,7 @@ pub const PROTOCOL_VERSION: u8 = 10;
 pub const SERVER_VERSION: &str = "5.7.32-kv";
 pub const MAX_PACKET_SIZE: usize = 8 * 1024 * 1024;
 
+/// 从接收缓冲区取出一个完整数据包；数据不足时保留缓冲区并返回 `None`。
 pub fn read_packet(buf: &mut BytesMut) -> io::Result<Option<Vec<u8>>> {
     if buf.len() < 4 {
         return Ok(None);
@@ -26,6 +27,7 @@ pub fn read_packet(buf: &mut BytesMut) -> io::Result<Option<Vec<u8>>> {
     Ok(Some(payload))
 }
 
+/// 为 payload 添加三字节长度和一字节序号。
 pub fn write_packet(payload: &[u8], seq_id: u8) -> Vec<u8> {
     let len = payload.len();
     let mut packet = Vec::with_capacity(4 + len);
@@ -62,7 +64,7 @@ pub fn make_handshake() -> Vec<u8> {
 pub fn make_ok_packet(affected_rows: u64, last_insert_id: u64, seq_id: u8) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(0x00);
-    // length-encoded integers (simplified: single byte for values < 251)
+    // 当前 SQL 子集只返回小计数，超过 250 的值按协议演示范围截断。
     payload.push(affected_rows.min(250) as u8);
     payload.push(last_insert_id.min(250) as u8);
     payload.extend_from_slice(&[0x02, 0x00]); // status flags

@@ -96,6 +96,7 @@ test_protocol.py 端到端协议和持久化验证
 - [架构与设计依据](docs/architecture.md)
 - [开发与测试指南](docs/development.md)
 - [开源参考与差异](docs/open-source-references.md)
+- [源码对照录制卡](docs/source-code-comparison.md)
 - [视频录制指南](docs/video-recording-guide.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)

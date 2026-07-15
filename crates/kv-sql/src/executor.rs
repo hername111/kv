@@ -1,3 +1,5 @@
+//! 逻辑计划执行器、目录缓存和事务写缓冲。
+
 use crate::ast::{Expr, SelectItem};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -14,13 +16,14 @@ use std::sync::{Arc, Mutex};
 type TableEntries = Vec<(Vec<u8>, Vec<u8>)>;
 type TableEntryMap = HashMap<u64, TableEntries>;
 
-/// Per-transaction write buffer: stores pending operations before commit
+/// 事务提交前隔离保存写入和删除操作。
 #[derive(Clone, Default)]
 struct TxnBuffer {
-    inserts: TableEntryMap,              // table_id -> (key, value)
-    deletes: HashMap<u64, Vec<Vec<u8>>>, // table_id -> keys
+    inserts: TableEntryMap,
+    deletes: HashMap<u64, Vec<Vec<u8>>>,
 }
 
+/// 连接 SQL 前端、事务控制和存储引擎的执行器。
 pub struct SqlExecutor {
     storage: Arc<dyn StorageEngine>,
     tables: Mutex<HashMap<String, TableMeta>>,
@@ -30,12 +33,14 @@ pub struct SqlExecutor {
 }
 
 #[derive(Debug, Clone)]
+/// Web 工作台使用的表元数据与一致性记录快照。
 pub struct TableSnapshot {
     pub meta: TableMeta,
     pub rows: Vec<Row>,
 }
 
 impl SqlExecutor {
+    /// 使用指定存储后端创建执行器。
     pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
         SqlExecutor {
             storage,
@@ -46,11 +51,11 @@ impl SqlExecutor {
         }
     }
 
+    /// 从持久化目录恢复表元数据和各表 B+Tree 根页。
     pub async fn load_catalog(&self) -> KvResult<()> {
         let metas = self.storage.load_all_table_meta().await?;
         let mut restored = Vec::with_capacity(metas.len());
         for meta in metas {
-            // Restore the table's B+Tree from persisted root page ID
             if meta.root_page_id != 0 {
                 self.storage
                     .restore_table(meta.table_id, meta.root_page_id)
@@ -146,6 +151,7 @@ impl SqlExecutor {
         Ok(entries)
     }
 
+    /// 依次完成词法分析、解析、计划生成和执行。
     pub async fn execute_sql(&self, sql: &str, session: &Session) -> KvResult<ResultSet> {
         let mut lexer = Lexer::new(sql);
         let tokens = lexer.tokenize()?;
@@ -154,6 +160,7 @@ impl SqlExecutor {
         self.execute_plan(plan, session).await
     }
 
+    /// 返回已提交数据的表快照，不包含其他会话的未提交写入。
     pub async fn snapshot_tables(&self) -> KvResult<Vec<TableSnapshot>> {
         let metas = self
             .tables
@@ -432,13 +439,12 @@ impl SqlExecutor {
                     .storage
                     .create_index(meta.table_id, meta.columns[col_idx].id)
                     .await?;
-                // Scan base table and build the index
                 let txn_id = session.txn_id().unwrap_or(0);
                 let all = self
                     .storage
                     .scan(meta.table_id, &[], &[255u8; 32], txn_id)
                     .await?;
-                // Downcast to access build_index
+                // 批量建索引是当前磁盘引擎的扩展能力，不属于通用查询接口。
                 if let Some(ks) = self
                     .storage
                     .as_any()
@@ -447,7 +453,6 @@ impl SqlExecutor {
                     ks.build_index(index_id, meta.table_id, col_idx, &all)
                         .await?;
                 }
-                // Record index in table metadata and persist
                 let updated_meta = {
                     let mut tables = self.tables.lock().unwrap();
                     if let Some(tm) = tables.get_mut(&table) {
@@ -479,7 +484,6 @@ impl SqlExecutor {
                         .ok_or_else(|| KvError::TableNotFound(table.clone()))?
                 };
                 let txn_id = session.txn_id().unwrap_or(0);
-                // Find the index ID from metadata
                 let index_id = meta
                     .indexes
                     .first()
@@ -518,7 +522,7 @@ impl SqlExecutor {
                     mgr.commit(txn_id)
                         .map_err(|e| KvError::Internal(e.to_string()))?;
                 }
-                // Flush buffered writes to storage
+                // 先落盘写集合，再释放锁并清除会话事务 ID。
                 let buffer = self.get_txn_buffer(txn_id);
                 for (table_id, entries) in &buffer.inserts {
                     for (key, val) in entries {

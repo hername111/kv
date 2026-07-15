@@ -1,8 +1,11 @@
+//! SQL Token 流的递归下降解析器。
+
 use crate::ast::*;
 use crate::lexer::Token;
 use kv_common::error::{KvError, KvResult};
 use kv_common::types::{ColumnDef, DataType};
 
+/// 每次解析一条 SQL 语句的递归下降解析器。
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
@@ -20,7 +23,7 @@ impl Parser {
         self.pos += 1;
         t
     }
-    /// 解析可能带表前缀的列名，如 "table.col" → 返回 "col"
+    /// 读取 `table.column` 或 `column`，执行器只保留列名部分。
     fn parse_on_column(&mut self) -> KvResult<String> {
         let first = self.expect_ident()?;
         if self.peek() == Some(&Token::Dot) {
@@ -358,7 +361,7 @@ impl Parser {
         self.parse_logical()
     }
 
-    /// logical: comparison (AND/OR comparison)*
+    // logical := comparison ((AND | OR) comparison)*
     fn parse_logical(&mut self) -> KvResult<Expr> {
         let mut left = self.parse_comparison()?;
         while let Some(tok) = self.peek() {
@@ -379,7 +382,7 @@ impl Parser {
         Ok(left)
     }
 
-    /// comparison: primary ((= | <> | != | > | < | >= | <=) primary)?
+    // comparison := primary (comparison_operator primary)?
     fn parse_comparison(&mut self) -> KvResult<Expr> {
         let left = self.parse_primary()?;
         match self.peek() {

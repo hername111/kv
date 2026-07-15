@@ -1,7 +1,10 @@
+//! 基于事务 ID 的内存版本链。
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
+/// 一个键在某次事务中的值或删除标记。
 pub struct Version {
     pub txn_id: u64,
     pub value: Option<Vec<u8>>,
@@ -10,8 +13,9 @@ pub struct Version {
 }
 
 #[derive(Debug, Clone)]
+/// 按创建顺序保存同一键的多个版本。
 pub struct VersionChain {
-    pub versions: Vec<Version>,
+    versions: Vec<Version>,
 }
 
 impl VersionChain {
@@ -31,6 +35,7 @@ impl VersionChain {
         });
     }
 
+    /// 返回不晚于快照且不属于其他活动事务的最新版本。
     pub fn visible_version(&self, snapshot_txn_id: u64, active_txns: &[u64]) -> Option<&Version> {
         for v in self.versions.iter().rev() {
             if v.txn_id <= snapshot_txn_id {
@@ -58,8 +63,9 @@ impl Default for VersionChain {
     }
 }
 
+/// 将键映射到版本链的线程安全内存存储。
 pub struct MvccStore {
-    pub chains: Mutex<HashMap<Vec<u8>, VersionChain>>,
+    chains: Mutex<HashMap<Vec<u8>, VersionChain>>,
 }
 
 impl MvccStore {

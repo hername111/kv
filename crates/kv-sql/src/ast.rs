@@ -1,4 +1,4 @@
-// AST 节点定义：Statement, Expr, Operator, OrderBy, Join, SelectItem
+//! SQL 抽象语法树与表达式求值。
 use kv_common::types::{ColumnDef, Row, Value};
 
 #[derive(Debug, Clone)]
@@ -61,7 +61,7 @@ pub enum Expr {
 }
 
 impl Expr {
-    /// 用给定行的值计算表达式的值
+    /// 根据列名上下文计算当前行上的表达式值。
     pub fn evaluate(&self, row: &Row, column_names: &[String]) -> Option<Value> {
         match self {
             Expr::Column(name) => {

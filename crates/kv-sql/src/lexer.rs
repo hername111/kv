@@ -1,4 +1,4 @@
-// 词法分析器：SQL 文本 → Token 流
+//! SQL 子集的词法分析器。
 use kv_common::error::{KvError, KvResult};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +57,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
+    /// 创建从 UTF-8 SQL 文本读取字符的词法分析器。
     pub fn new(input: &'a str) -> Self {
         Self {
             chars: input.chars().collect(),
@@ -171,6 +172,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// 扫描完整输入并在末尾附加 `Eof`。
     pub fn tokenize(&mut self) -> KvResult<Vec<Token>> {
         let mut tokens = Vec::new();
         while self.pos < self.chars.len() {

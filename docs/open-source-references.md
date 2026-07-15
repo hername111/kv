@@ -14,6 +14,7 @@
 | CMU BusTub | [cmu-db/bustub](https://github.com/cmu-db/bustub) | 教学数据库的模块边界：存储、事务、执行器与公共接口分离 |
 
 上述链接用于概念引用。项目依赖中不包含这些数据库的代码包，提交历史也不包含其源文件。
+视频使用的逐行短摘录、固定版本、许可证和对应本项目文件见[源码对照录制卡](source-code-comparison.md)。
 
 ## 差异与改进
 

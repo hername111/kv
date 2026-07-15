@@ -1,14 +1,9 @@
-// Row 序列化/反序列化
+//! 行值的紧凑二进制编解码。
 use kv_common::types::{Row, Value};
 use std::io::{Error, ErrorKind};
 
-// Format per value:
-// tag: u8
-// 0x00 => Null (no payload)
-// 0x01 => Int (i64, 8 bytes LE)
-// 0x02 => Float (f64, 8 bytes LE)
-// 0x03 => String (u32 len LE, then bytes)
-// 0x04 => Bool (u8 0/1)
+// 每个值以一字节标签开头：Null=0，Int=1，Float=2，String=3，Bool=4。
+// 定长数值使用小端序；字符串标签后依次保存 u32 长度和 UTF-8 字节。
 
 pub fn serialize_row(row: &Row) -> Vec<u8> {
     let mut buf = Vec::new();

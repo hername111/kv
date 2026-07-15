@@ -1,3 +1,5 @@
+//! 将 AST 转换为可递归执行的逻辑计划树。
+
 use crate::ast::*;
 use kv_common::error::KvResult;
 use kv_common::types::ColumnDef;
@@ -63,6 +65,7 @@ pub enum PlanNode {
     },
 }
 
+/// 无状态的逻辑计划生成器。
 pub struct Planner;
 
 impl Planner {

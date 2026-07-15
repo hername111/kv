@@ -1,3 +1,5 @@
+//! 固定大小页面、缓冲池、B+Tree 和持久化存储引擎。
+
 pub mod btree;
 pub mod buffer;
 pub mod codec;

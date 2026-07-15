@@ -1,4 +1,4 @@
-// 统一错误类型 KvError
+//! 数据库各层共享的错误类型。
 use crate::types::DataType;
 
 pub type KvResult<T> = Result<T, KvError>;

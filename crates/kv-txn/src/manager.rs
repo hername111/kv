@@ -1,7 +1,8 @@
-// 事务管理器：begin/commit/rollback 生命周期
+//! 事务状态机和读写集合。
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 事务只能从 `Active` 转移到一个终态。
 pub enum TxnState {
     Active,
     Committed,
@@ -9,17 +10,16 @@ pub enum TxnState {
 }
 
 #[derive(Debug, Clone)]
-pub struct Transaction {
-    pub id: u64,
-    pub state: TxnState,
-    // 简单的读写集示例：表名 -> set of row ids (as strings for generality)
-    pub read_set: HashMap<String, HashSet<String>>,
-    pub write_set: HashMap<String, HashSet<String>>,
+struct Transaction {
+    state: TxnState,
+    read_set: HashMap<String, HashSet<String>>,
+    write_set: HashMap<String, HashSet<String>>,
 }
 
+/// 分配事务 ID 并维护事务状态与读写集合。
 pub struct TxnManager {
     counter: u64,
-    pub transactions: HashMap<u64, Transaction>,
+    transactions: HashMap<u64, Transaction>,
 }
 
 #[derive(Debug)]
@@ -55,11 +55,10 @@ impl TxnManager {
         }
     }
 
-    /// 开始一个新事务，返回事务 id
+    /// 开始事务并返回单调递增的事务 ID。
     pub fn begin(&mut self) -> u64 {
         self.counter += 1;
         let txn = Transaction {
-            id: self.counter,
             state: TxnState::Active,
             read_set: HashMap::new(),
             write_set: HashMap::new(),
@@ -68,31 +67,29 @@ impl TxnManager {
         self.counter
     }
 
-    /// 提交事务：只有 Active 状态可以提交
+    /// 将活动事务标记为已提交。
     pub fn commit(&mut self, txn_id: u64) -> Result<(), TxnError> {
         match self.transactions.get_mut(&txn_id) {
             Some(txn) => match txn.state {
                 TxnState::Active => {
                     txn.state = TxnState::Committed;
-                    // 提交时可在此触发日志、刷盘等操作
                     Ok(())
                 }
-                ref s => Err(TxnError::InvalidState(txn_id, s.clone())),
+                state => Err(TxnError::InvalidState(txn_id, state)),
             },
             None => Err(TxnError::NotFound(txn_id)),
         }
     }
 
-    /// 回滚事务：只有 Active 状态可以回滚
+    /// 将活动事务标记为已回滚。
     pub fn rollback(&mut self, txn_id: u64) -> Result<(), TxnError> {
         match self.transactions.get_mut(&txn_id) {
             Some(txn) => match txn.state {
                 TxnState::Active => {
                     txn.state = TxnState::RolledBack;
-                    // 回滚时可在此撤销写集或触发补偿逻辑
                     Ok(())
                 }
-                ref s => Err(TxnError::InvalidState(txn_id, s.clone())),
+                state => Err(TxnError::InvalidState(txn_id, state)),
             },
             None => Err(TxnError::NotFound(txn_id)),
         }
@@ -108,7 +105,7 @@ impl TxnManager {
                     .insert(row_id.to_string());
                 Ok(())
             }
-            Some(txn) => Err(TxnError::InvalidState(txn_id, txn.state.clone())),
+            Some(txn) => Err(TxnError::InvalidState(txn_id, txn.state)),
             None => Err(TxnError::NotFound(txn_id)),
         }
     }
@@ -123,14 +120,14 @@ impl TxnManager {
                     .insert(row_id.to_string());
                 Ok(())
             }
-            Some(txn) => Err(TxnError::InvalidState(txn_id, txn.state.clone())),
+            Some(txn) => Err(TxnError::InvalidState(txn_id, txn.state)),
             None => Err(TxnError::NotFound(txn_id)),
         }
     }
 
-    /// 查询事务状态（只读）
+    /// 返回事务当前状态。
     pub fn status(&self, txn_id: u64) -> Option<TxnState> {
-        self.transactions.get(&txn_id).map(|t| t.state.clone())
+        self.transactions.get(&txn_id).map(|t| t.state)
     }
 }
 

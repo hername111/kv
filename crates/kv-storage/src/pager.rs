@@ -1,3 +1,5 @@
+//! 数据库文件、superblock 和持久化空闲页链表。
+
 use async_trait::async_trait;
 use kv_common::error::{KvError, KvResult};
 use kv_common::traits::Pager;
@@ -14,6 +16,7 @@ const FORMAT_VERSION: u32 = 1;
 const MAGIC_OFFSET: usize = 24;
 const VERSION_OFFSET: usize = 32;
 
+/// 将页号映射到数据库文件中固定 4 KiB 区域的页面管理器。
 pub struct DiskPager {
     file: Mutex<std::fs::File>,
     free_pages: Mutex<Vec<u64>>,
@@ -22,6 +25,7 @@ pub struct DiskPager {
 }
 
 impl DiskPager {
+    /// 打开或初始化数据库文件，并验证 superblock 与空闲页链表。
     pub fn open(path: impl AsRef<Path>) -> KvResult<Self> {
         let mut file = OpenOptions::new()
             .read(true)
@@ -109,7 +113,7 @@ impl DiskPager {
                 file.read_exact(&mut page).map_err(KvError::Io)?;
                 current = u64::from_le_bytes(page[0..8].try_into().unwrap());
             }
-            // Keep the current head at the end so allocate_page can pop in O(1).
+            // Vec 尾部对应链表头，使页面分配可以 O(1) 弹出。
             free_pages.reverse();
             (next_id, free_pages, meta_root)
         };

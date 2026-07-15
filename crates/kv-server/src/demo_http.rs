@@ -1,3 +1,5 @@
+//! 仅绑定本机的工作台 HTTP 接口。
+
 use kv_common::types::{ColumnDef, ResultSet, Row, Session, TableMeta, Value};
 use kv_sql::{SqlExecutor, TableSnapshot};
 use serde::Deserialize;
@@ -66,6 +68,7 @@ async fn handle_http(
         )
         .await;
     }
+    // 在分配剩余缓冲区前检查声明长度，避免不受限的请求体分配。
     let mut body = initial_body.as_bytes().to_vec();
     if body.len() > MAX_BODY_SIZE {
         return write_response(

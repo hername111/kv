@@ -1,9 +1,10 @@
-// Slotted Page 布局 (4KB)：页头 + 槽目录 + 元组数据区
+//! 4 KiB 槽页：页头和槽目录向后增长，元组数据从页尾向前增长。
 use std::io::{self, Error, ErrorKind};
 
 pub const PAGE_SIZE: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 槽页头；偏移均相对于页面起始位置。
 pub struct PageHeader {
     pub page_id: u64,
     pub tuple_count: u16,
@@ -72,6 +73,7 @@ impl SlotEntry {
 }
 
 #[derive(Debug, Clone)]
+/// 保存变长记录的固定大小页面。
 pub struct SlottedPage {
     data: [u8; PAGE_SIZE],
 }
@@ -83,6 +85,7 @@ impl Default for SlottedPage {
 }
 
 impl SlottedPage {
+    /// 创建不包含记录的新页面。
     pub fn new(page_id: u64) -> Self {
         let mut page = SlottedPage {
             data: [0u8; PAGE_SIZE],
@@ -99,6 +102,7 @@ impl SlottedPage {
         page
     }
 
+    /// 从完整页面恢复，并校验槽目录和元组区域没有越界或重叠。
     pub fn from_bytes(data: &[u8]) -> io::Result<Self> {
         if data.len() != PAGE_SIZE {
             return Err(Error::new(
@@ -126,6 +130,7 @@ impl SlottedPage {
         self.data[..PageHeader::SIZE].copy_from_slice(&encoded);
     }
 
+    /// 返回扣除尚未写入的槽项后可用于新记录的空间。
     pub fn free_space(&self) -> u16 {
         let h = self.header();
         let slot_bytes = h.tuple_count.saturating_mul(SlotEntry::SIZE as u16);
@@ -134,6 +139,7 @@ impl SlottedPage {
             .saturating_sub(slot_bytes)
     }
 
+    /// 插入记录并返回稳定的槽号；页面空间不足时不修改页面。
     pub fn insert(&mut self, tuple: &[u8]) -> io::Result<u16> {
         let mut h = self.header();
         let required = tuple

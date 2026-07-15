@@ -1,21 +1,24 @@
+//! 带超时清理的表级共享锁和排他锁。
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 表锁模式。
 pub enum LockMode {
     Shared,
     Exclusive,
 }
 
 #[derive(Debug, Clone)]
-pub struct LockEntry {
-    pub txn_id: u64,
-    pub mode: LockMode,
-    pub table: String,
-    pub acquired_at: Instant,
+struct LockEntry {
+    txn_id: u64,
+    mode: LockMode,
+    acquired_at: Instant,
 }
 
+/// 按表名保存锁持有者；过期锁在下一次加锁时惰性清理。
 pub struct LockManager {
     locks: Mutex<HashMap<String, Vec<LockEntry>>>,
     timeout: Duration,
@@ -45,7 +48,6 @@ impl LockManager {
             entries.push(LockEntry {
                 txn_id,
                 mode: LockMode::Shared,
-                table: table.to_string(),
                 acquired_at: Instant::now(),
             });
         }
@@ -65,7 +67,6 @@ impl LockManager {
         entries.push(LockEntry {
             txn_id,
             mode: LockMode::Exclusive,
-            table: table.to_string(),
             acquired_at: Instant::now(),
         });
         Ok(())

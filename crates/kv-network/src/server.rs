@@ -1,3 +1,5 @@
+//! 每个连接独立持有会话的 MySQL TCP 服务。
+
 use crate::protocol;
 use bytes::BytesMut;
 use kv_common::traits::CommandHandler;
@@ -6,6 +8,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+/// 接受 MySQL 客户端连接并把查询转发给命令处理器。
 pub struct KvServer {
     pub addr: String,
     handler: Option<Arc<dyn CommandHandler>>,
@@ -24,6 +27,7 @@ impl KvServer {
         self
     }
 
+    /// 绑定监听地址并持续处理连接，直到任务被取消或监听器出错。
     pub async fn start(&self) -> std::io::Result<()> {
         let listener = TcpListener::bind(&self.addr).await?;
         println!("KV Server listening on {}", self.addr);
@@ -108,6 +112,7 @@ async fn read_next_packet<R>(
 where
     R: AsyncRead + Unpin,
 {
+    // TCP 没有消息边界；缓冲区可能包含半个包或连续多个包。
     loop {
         if let Some(payload) = protocol::read_packet(buffer)? {
             return Ok(Some(payload));

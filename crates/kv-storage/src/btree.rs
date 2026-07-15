@@ -1,4 +1,4 @@
-// B+Tree (ORDER=4)：基于 Pager trait 的持久化 B+树索引
+//! 基于 [`Pager`] 的固定阶持久化 B+Tree。
 use crate::page::PAGE_SIZE;
 use kv_common::error::{KvError, KvResult};
 use kv_common::traits::Pager;
@@ -156,12 +156,16 @@ fn find_key_index(keys: &[Vec<u8>], target: &[u8]) -> usize {
         .unwrap_or(keys.len())
 }
 
+/// 以有序字节串为键的 B+Tree。
+///
+/// 叶节点通过 `next` 页号串联，因此范围扫描不需要返回父节点。
 pub struct BPlusTree {
     pub pager: Arc<dyn Pager>,
     pub root_page_id: AtomicU64,
 }
 
 impl BPlusTree {
+    /// 分配一个空叶节点作为新树的根。
     pub async fn new(pager: Arc<dyn Pager>) -> KvResult<Self> {
         let root_page_id = pager.allocate_page().await?;
         let leaf = encode_leaf_node(&[], &[], 0)?;
@@ -172,6 +176,7 @@ impl BPlusTree {
         })
     }
 
+    /// 使用目录中已持久化的根页号打开树。
     pub fn open(pager: Arc<dyn Pager>, root_page_id: u64) -> Self {
         BPlusTree {
             pager,
@@ -179,6 +184,7 @@ impl BPlusTree {
         }
     }
 
+    /// 插入或替换键值；节点超过单页容量时返回错误而不截断数据。
     pub async fn insert(&self, key: &[u8], value: &[u8]) -> KvResult<()> {
         let result = self
             .insert_recursive(self.root_page_id.load(Ordering::Relaxed), key, value)
@@ -290,6 +296,7 @@ impl BPlusTree {
         }
     }
 
+    /// 按键顺序扫描半开区间 `[start, end)`。
     pub async fn scan(&self, start: &[u8], end: &[u8]) -> KvResult<Vec<(Vec<u8>, Vec<u8>)>> {
         let mut page_id = self.root_page_id.load(Ordering::Relaxed);
         loop {

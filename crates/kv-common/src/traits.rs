@@ -1,21 +1,21 @@
-// 核心 trait 定义：StorageEngine, CommandHandler, TxnContext, Pager
+//! 数据库各层之间的稳定接口。
 use crate::error::KvResult;
 use crate::types::{ColumnId, IndexId, IsolationLevel, ResultSet, Session, TableId, TableMeta};
 use async_trait::async_trait;
 
-/// 存储引擎抽象 — SQL 层和事务层依赖此 trait 访问数据
+/// SQL 执行器访问表、索引和目录的存储接口。
 #[async_trait]
 pub trait StorageEngine: Send + Sync {
-    /// 创建表，返回 table_id
+    /// 创建表并返回全局唯一的表 ID。
     async fn create_table(&self, table_name: &str) -> KvResult<TableId>;
 
-    /// 插入或更新一行
+    /// 按主键插入或替换一行。
     async fn put(&self, table_id: TableId, key: &[u8], value: &[u8], txn_id: u64) -> KvResult<u64>;
 
-    /// 读取指定版本的可见数据
+    /// 读取事务可见的主键记录。
     async fn get(&self, table_id: TableId, key: &[u8], txn_id: u64) -> KvResult<Option<Vec<u8>>>;
 
-    /// 范围扫描
+    /// 扫描半开区间 `[start, end)`。
     async fn scan(
         &self,
         table_id: TableId,
@@ -24,7 +24,7 @@ pub trait StorageEngine: Send + Sync {
         txn_id: u64,
     ) -> KvResult<Vec<(Vec<u8>, Vec<u8>)>>;
 
-    /// 标记删除
+    /// 删除指定主键。
     async fn delete(&self, table_id: TableId, key: &[u8], txn_id: u64) -> KvResult<()>;
 
     /// 创建索引
@@ -61,24 +61,24 @@ pub trait StorageEngine: Send + Sync {
         Ok(())
     }
 
-    /// 用于向下转型到具体实现
+    /// 返回具体实现，供存储特有的维护操作使用。
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
-/// SQL 命令处理接口 — Network 层调用此 trait 执行 SQL
+/// 网络层调用的 SQL 命令接口。
 #[async_trait]
 pub trait CommandHandler: Send + Sync {
     async fn execute(&self, sql: &str, session: &Session) -> KvResult<ResultSet>;
 }
 
-/// 事务上下文 — 携带当前事务的快照信息
+/// SQL 执行期间所需的事务快照信息。
 pub trait TxnContext {
     fn txn_id(&self) -> u64;
     fn snapshot_version(&self) -> u64;
     fn isolation_level(&self) -> IsolationLevel;
 }
 
-/// 页管理器接口 — 存储引擎通过此 trait 读写磁盘页
+/// 存储引擎使用的固定大小页面接口。
 #[async_trait]
 pub trait Pager: Send + Sync {
     /// 读取指定页（4KB）
