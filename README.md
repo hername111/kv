@@ -111,11 +111,22 @@ python test_protocol.py
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-and-show-tests.ps1
 ```
 
-数据库文件的只读页信息可用以下命令查看：
+如果要录制一个从 0 开始的演示，先清空专用演示目录，再用同一个目录启动服务：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -ResetVideoDemo
+$env:KV_DATA_DIR = "target/video-demo"
+cargo run -p kv-server
+```
+
+数据库文件的只读页信息和 Web 工作台当前表数据可用以下命令查看：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -DbPath target/video-demo/kv.db
 ```
+
+`show-kv-db.ps1` 默认还会读取 `http://127.0.0.1:8080/api/state`，所以在 Web 执行 SQL 后可以看到表名、字段和行数据。它不会写入数据库；如果它在录制前显示已有页面或表数据，说明
+`target/video-demo/kv.db` 是之前演示留下的文件，先运行 `show-kv-db.ps1 -ResetVideoDemo` 后再启动服务。
 
 协议脚本会启动隔离的数据目录并验证 SQL、事务、索引、错误处理和重启持久化。当前基线包含 **74 个 Rust 测试**和 **87 项协议/持久化测试**；CI 还会在 GitHub Actions 中重复执行格式检查、Clippy、Rust 测试、前端构建和协议测试。
 
