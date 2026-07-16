@@ -121,36 +121,63 @@ crates/
   kv-network/     MySQL Wire Protocol、TCP 连接和结果编码
   kv-server/      服务组装与本地演示 HTTP API
 demo-client/      React + Vite 数据库工作台
-docs/             架构、开发、开源参考和视频材料
+docs/             视频录制与提交指导
+report/           实验报告 LaTeX 源文件和最终 PDF
 scripts/          视频录制和数据库文件检查辅助脚本
 test_protocol.py  端到端协议与持久化测试
 ```
 
-依赖关系从上到下保持单向：网络和 HTTP 层调用 SQL 执行器，执行器依赖事务与存储；存储层不依赖前端或网络协议。模块设计和数据布局见[架构与设计依据](docs/architecture.md)。
+## 架构与接口
+
+```text
+MySQL CLI --> kv-network --+
+                           +--> kv-sql --> kv-txn --> kv-storage --> kv.db
+Web UI ----> demo HTTP API-+
+```
+
+依赖关系从上到下保持单向：网络和 HTTP 层调用 SQL 执行器，执行器依赖事务与存储；存储层不依赖前端或网络协议。数据库文件由固定 4096 字节页面组成，page 0 的 superblock 保存 `next_page_id`、`free_list_head`、`catalog_root`、`KVDBPAGE` 魔数和格式版本。打开文件时会检查长度、版本、页号范围和空闲链表环。
+
+本地工作台使用以下接口，均由 `kv-server` 提供：
+
+| 接口 | 作用 | 主要限制 |
+| --- | --- | --- |
+| `GET /api/state` | 返回表结构、索引数量和记录快照 | 只用于本地演示 |
+| `POST /api/query` | 执行一条 SQL，返回结果、状态和 `durationMicros` | JSON 请求体最大 64 KiB |
+| `POST /api/reset` | 回滚活动事务并清空演示表 | 共享单个演示会话 |
+
+对应实现位于 `crates/kv-server/src/demo_http.rs`。API 没有认证、权限控制或多用户隔离，不应暴露到公网。
 
 ## 开源参考与差异
 
-本项目借鉴的是公开架构思想和接口组织方式，没有复制 SQLite、PostgreSQL、MySQL InnoDB 或 BusTub 的源文件。参考来源、许可证、固定版本、代码摘录、对应实现位置和改进点集中记录在：
+本项目借鉴公开架构思想和接口组织方式，没有复制上游源码文件：
 
-- [开源参考与差异](docs/open-source-references.md)
-- [源码对照录制卡](docs/source-code-comparison.md)
+| 项目 | 固定版本与许可证 | 借鉴内容 | 本项目差异 |
+| --- | --- | --- | --- |
+| [SQLite](https://www.sqlite.org/fileformat2.html) | 3.50.4，Public Domain | 固定页、文件头、free-list | 使用更小的 superblock 和页内单链表，增加魔数、版本、截断与链表环检查 |
+| [PostgreSQL](https://www.postgresql.org/docs/current/storage-page-layout.html) | `REL_18_0`，PostgreSQL License | slotted page | 仅保留教学字段，集中校验槽目录和 tuple 边界，不实现 WAL 页头 |
+| [MySQL InnoDB](https://dev.mysql.com/doc/refman/8.4/en/innodb-index-types.html) | `mysql-8.4.0`，GPLv2 | B+Tree 索引页与叶节点组织 | 固定阶教学 B+Tree，叶链支持扫描，超页或损坏字段直接报错 |
+| [CMU BusTub](https://github.com/cmu-db/bustub/tree/f0d9e3753482d45f2b5919da1873684600b48508) | commit `f0d9e375...b48508`，MIT | 教学数据库分层与 BufferPoolManager 职责 | 使用 Rust `Pager` trait、Mutex 和 LRU，并测试释放页后的缓存失效 |
 
-视频或答辩时，应同时说明“参考了什么”“本项目实现在哪里”“与原项目有什么取舍”，不要只列出项目名称。
+视频中需要展示的固定源码链接、对应本项目文件和口头说明全部集中在[视频录制与提交指导](docs/video-recording-guide.md)。
 
-## 文档导航
+## 必要文档
 
-- [文档索引](docs/README.md)
-- [架构与设计依据](docs/architecture.md)
-- [本地 HTTP API](docs/api-reference.md)
-- [开发与测试指南](docs/development.md)
-- [开源参考与差异](docs/open-source-references.md)
-- [源码对照录制卡](docs/source-code-comparison.md)
-- [3 分钟视频录制指南](docs/video-recording-guide.md)
-- [提交前检查清单](docs/submission-checklist.md)
+- [视频录制与提交指导](docs/video-recording-guide.md)：录制准备、演示 SQL、完整时间轴、源码对比、台词、故障预案和提交检查。
+- [实验报告 PDF](report/main.pdf)：课程提交版报告。
+- [实验报告 LaTeX 源文件](report/main.tex)：报告的可维护源文件。
+
+## 开发约定
+
+- 页面、文件格式、B+Tree 与缓存放在 `kv-storage`；事务语义放在 `kv-txn`。
+- SQL 语法变更应同时覆盖 lexer、parser、planner 和 executor。
+- `demo-client` 只消费后端 API，不复制 SQL 或事务规则。
+- 文件格式变更必须补充兼容或明确迁移错误；持久化测试必须包含关闭和重新打开。
+- 网络和磁盘输入必须有边界检查，并测试分片、截断、超限或损坏路径。
+- `target/`、`node_modules/`、`dist/`、`kv_data/` 和 LaTeX 中间文件不进入版本控制。
 
 ## 当前边界
 
-为了保持课程项目规模，当前版本明确不包含：WAL 和崩溃原子恢复、完整 B+Tree 删除再平衡、持久化 MVCC 版本链、行级锁和死锁图、完整 MySQL 兼容性、用户认证与权限控制。后续演进优先级见[架构文档](docs/architecture.md#后续优先级)。
+为了保持课程项目规模，当前版本明确不包含：WAL 和崩溃原子恢复、完整 B+Tree 删除再平衡、持久化 MVCC 版本链、行级锁和死锁图、完整 MySQL 兼容性、用户认证与权限控制。
 
 ## 许可证
 

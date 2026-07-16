@@ -1,4 +1,4 @@
-# 3 分钟项目视频录制指南
+# 3 分钟项目视频录制与提交指导
 
 本指南只用于录制视频，不是实验报告。成片建议控制在 **2 分 45 秒至 2 分 55 秒**，给平台
 转码和片尾留出余量，绝对不要超过 3 分钟。
@@ -25,7 +25,7 @@
 - VS Code 字号调到 18-20，终端字号至少 16，隐藏无关侧栏和个人路径。
 - 浏览器只保留工作台标签页，不展示收藏夹、账号头像或隐私信息。
 - 麦克风先录 10 秒试听，确保没有爆音、键盘声和持续底噪。
-- 提前打开 [源码对照录制卡](source-code-comparison.md) 中的 8 个固定标签页；不要现场搜索仓库。
+- 提前按本指南“四、开源源码对照”打开 8 个固定标签页；不要现场搜索仓库。
 
 ### 启动干净的演示环境
 
@@ -188,8 +188,8 @@ SELECT * FROM users WHERE id = 1;
 
 ## 四、开源项目对比：按代码说，不只报项目名
 
-源码镜头统一遵循“上游 6-8 行 -> 本项目对应实现 -> 差异和改进”三步。固定版本、许可证和
-permalink 以[源码对照录制卡](source-code-comparison.md)为准。下面的台词可以直接使用：
+源码镜头统一遵循“上游 6-8 行 -> 本项目对应实现 -> 差异和改进”三步。固定版本、许可证、
+permalink 和台词全部以本节为准。
 
 | 来源 | 上游代码要指出的具体内容 | 本项目要指出的代码 | 准确的差异与改进台词 |
 | --- | --- | --- | --- |
@@ -202,6 +202,21 @@ permalink 以[源码对照录制卡](source-code-comparison.md)为准。下面�
 边界；本项目的改进是格式校验、错误传播、缓存失效和可重复测试，生产数据库的 WAL、并发控制和
 恢复能力不在本课程项目范围内。
 
+### 四组固定源码镜头
+
+录制前按下表依次打开“上游链接 + 本项目文件”，共 8 个标签页。上游画面只展示指定的 6-12 行，
+不要下载或复制整个文件。
+
+| 顺序 | 固定来源与许可证 | 上游画面 | 本项目画面 |
+| --- | --- | --- | --- |
+| 1 | [PostgreSQL `REL_18_0`, PostgreSQL License](https://github.com/postgres/postgres/blob/REL_18_0/src/include/storage/bufpage.h#L159-L174) | `PageHeaderData` 的 `pd_lower`、`pd_upper`、`pd_special`、`pd_linp` | `crates/kv-storage/src/page.rs` 的 `PageHeader`、`SlotEntry`、`validate_layout` |
+| 2 | [SQLite `version-3.50.4`, Public Domain](https://github.com/sqlite/sqlite/blob/version-3.50.4/src/btree.c#L6769-L6795) | `freePage2` 的页号范围检查和 free-page 计数 | `crates/kv-storage/src/pager.rs` 的 `free_page`、`open`、`free_list_head` |
+| 3 | [MySQL `mysql-8.4.0`, GPLv2](https://github.com/mysql/mysql-server/blob/mysql-8.4.0/storage/innobase/include/page0types.h#L53-L105) | `PAGE_N_DIR_SLOTS`、`PAGE_N_RECS`、`PAGE_LEVEL`、`PAGE_INDEX_ID` | `crates/kv-storage/src/btree.rs` 的节点标记、键数量和叶节点 `next` |
+| 4 | [BusTub commit `f0d9e375...b48508`, MIT](https://github.com/cmu-db/bustub/blob/f0d9e3753482d45f2b5919da1873684600b48508/src/include/buffer/buffer_pool_manager.h#L110-L127) | `NewPage`、`DeletePage`、`CheckedReadPage`、`CheckedWritePage`、`FlushPage` | `crates/kv-storage/src/buffer.rs` 的 `BufferPool`/`BufferedPager` 和 `kv-common` 的 `Pager` trait |
+
+每组画面按同一节奏：上游文件名、版本和许可证 2 秒，关键行 3 秒，本项目对应实现 3 秒。四组
+都只说“共同问题、不同实现、增加的检查或限制”，不要逐行念代码。
+
 ## 五、成片时间轴
 
 以下台词不需要逐字背诵，但每一项事实都应说到。正常语速约每分钟 220-260 个汉字。
@@ -209,12 +224,12 @@ permalink 以[源码对照录制卡](source-code-comparison.md)为准。下面�
 | 时间 | 画面与操作 | 建议讲述 | 对应评分点 |
 | --- | --- | --- | --- |
 | 0:00-0:18 | 工作台全景；标题页可覆盖左下角，显示项目名、成员、学号和分工 | “大家好，我们是【成员信息】。项目是 KV Database，一个用 Rust 从零实现的教学型关系数据库。我们的目标不是封装现有数据库，而是打通 SQL、事务、B+Tree 磁盘存储和 MySQL 协议的完整链路。” | 背景目标、团队分工、非照搬 |
-| 0:18-0:38 | 切到 VS Code，展示 `docs/architecture.md` 顶部请求路径，再快速展开六个 crate | “系统按职责拆成六个 crate：common 定义 trait 和类型，SQL 层完成词法、语法、计划和执行，txn 管理事务、MVCC 与锁，storage 实现 4KB 页面、缓冲池和 B+Tree，network 与 server 提供 MySQL 和 Web 双入口。” | 架构清晰、Rust 工程结构 |
+| 0:18-0:38 | 切到根 `README.md` 的“架构与接口”，再快速展开六个 crate | “系统按职责拆成六个 crate：common 定义 trait 和类型，SQL 层完成词法、语法、计划和执行，txn 管理事务、MVCC 与锁，storage 实现 4KB 页面、缓冲池和 B+Tree，network 与 server 提供 MySQL 和 Web 双入口。” | 架构清晰、Rust 工程结构 |
 | 0:38-1:08 | 回到工作台，粘贴 SQL A，点击执行；执行时指向六阶段链路，完成后点击 users/orders 标签 | “这里一次执行建表、批量插入和二级索引。请求真实经过 Lexer、Parser、Planner、事务层和 B+Tree。右侧可以直接检查 schema、主键、索引数量和当前记录，数据不是前端 mock，而是来自 Rust 服务的状态快照。” | 主体功能、索引、可观察性 |
 | 1:08-1:28 | 粘贴 SQL B 执行，停留在三行结果和耗时 | “查询层支持条件、投影、排序和等值 JOIN。这个例子把 users 与 orders 关联，结果由 MySQL 风格类型编码返回；右上角的微秒或毫秒数是后端执行器实测，不包含页面动画。” | 查询能力、真实结果、性能证据 |
 | 1:28-1:52 | 粘贴 SQL C，执行后指向 Ada=99；随后粘贴 SQL D，执行后指向 Ada=28 | “事务中更新后的 99 对当前会话立即可见，说明实现了读己之写；执行 ROLLBACK 后恢复为 28。底层由事务状态机、写缓冲、MVCC 可见性和表级锁协作，而不是在前端撤销。” | 事务核心功能、正确性演示 |
 | 1:52-2:08 | 切到测试终端，先框出 Rust 测试通过，再运行 `bash scripts/show-kv-db.sh target/video-demo/kv.db`，最后框出 `87 passed` | “测试覆盖 crate 单元和集成逻辑；协议脚本再通过真实 TCP 验证 DDL、DML、事务、错误处理和重启持久化。这里是数据库文件本身：4096 字节页、page 0 的 `KVDBPAGE` superblock、catalog root 和 free-list head 都来自磁盘，而不是前端模拟。” | 功能完善、代码规范、持久化证据 |
-| 2:08-2:40 | 按源码对照录制卡快速切换四组标签：PostgreSQL `PageHeaderData`、SQLite `freePage2`、InnoDB 页面常量、BusTub `BufferPoolManager`；每组随后切到本项目对应文件 | “PostgreSQL 的 `pd_lower/pd_upper/pd_linp` 对应我们的 `free_start/free_end/SlotEntry`，但我们没有 LSN 和 checksum；SQLite 的 `freePage2` 先做页号检查，我们在 `DiskPager::free_page` 之外还检查 superblock 和 freelist 环；InnoDB 的 `PAGE_LEVEL/PAGE_INDEX_ID` 对应页面元数据，而我们用 `FLAG_INTERNAL/FLAG_LEAF` 和叶节点 `next` 保留 B+Tree 最小闭环；BusTub 的五个 buffer API 被我们拆成 Rust `Pager` trait，并补了释放页后的缓存失效测试。所有摘录都保留许可证和官方链接，没有复制上游文件。” | 开源引用、区别、特色、改进、许可证 |
+| 2:08-2:40 | 按本指南“四组固定源码镜头”切换 PostgreSQL、SQLite、InnoDB、BusTub 及本项目对应文件 | “PostgreSQL 的 `pd_lower/pd_upper/pd_linp` 对应我们的 `free_start/free_end/SlotEntry`，但我们没有 LSN 和 checksum；SQLite 的 `freePage2` 先做页号检查，我们在 `DiskPager::free_page` 之外还检查 superblock 和 freelist 环；InnoDB 的 `PAGE_LEVEL/PAGE_INDEX_ID` 对应页面元数据，而我们用 `FLAG_INTERNAL/FLAG_LEAF` 和叶节点 `next` 保留 B+Tree 最小闭环；BusTub 的五个 buffer API 被我们拆成 Rust `Pager` trait，并补了释放页后的缓存失效测试。所有摘录都保留许可证和官方链接，没有复制上游文件。” | 开源引用、区别、特色、改进、许可证 |
 | 2:40-2:55 | 回到工作台全景，停在表状态与存储记录 | “最终项目形成了可连接、可持久化、可测试、可视化的 Rust 数据库最小闭环。源码、设计依据和复现命令都已整理在仓库中。谢谢观看。” | 总结完整、画面收束 |
 
 ## 六、必须拍到的 A 档证据
@@ -271,3 +286,41 @@ Get-NetTCPConnection -LocalPort 3307,8080,5173 -State Listen
 
 优先删掉页面等待和鼠标移动，不要删团队信息、事务结果、测试证据或开源差异。目标成片控制在
 2:50 左右。
+
+## 九、最终提交检查
+
+### 提交物
+
+- [ ] 实验报告使用 `report/main.pdf`，不以 Word 作为唯一报告文件。
+- [ ] 视频时长不超过 3 分钟，声音清楚，终端和代码可读。
+- [ ] 源码可按根 `README.md` 从干净环境启动。
+- [ ] 仓库包含 `README.md`、本指南、`Cargo.toml`、`Cargo.lock`、前端锁文件和源代码。
+- [ ] 提交包不包含 `target/`、`node_modules/`、`dist/`、`kv_data/`、临时截图、录屏或日志。
+
+### 报告与视频事实一致性
+
+- [ ] 姓名、学号和真实分工已同时写入报告与视频标题页。
+- [ ] 报告、视频和代码使用相同的测试数字、端口、模块名称和功能边界。
+- [ ] 明确说明没有 WAL、完整崩溃恢复、认证和完整 MySQL 兼容性。
+- [ ] 四个开源项目的固定版本、许可证、官方链接和差异均已展示。
+
+### 最终命令
+
+```powershell
+cargo fmt --check --all
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+cargo doc --workspace --no-deps
+cd demo-client
+npm ci
+npm run build
+cd ..
+python test_protocol.py
+git diff --check
+```
+
+- [ ] Rust 格式、Clippy、测试和文档生成全部通过。
+- [ ] 前端生产构建成功。
+- [ ] 协议脚本显示 `Total: 87, 87 passed`，并包含重启持久化测试。
+- [ ] 全仓库不存在密码、令牌、个人绝对路径、无关截图或临时日志。
+- [ ] 最终压缩包解压到新目录后仍能按 README 启动。
