@@ -12,6 +12,13 @@
 | [视频录制指南](video-recording-guide.md) | 三分钟时间轴、台词、操作、录制准备和故障预案 | 项目展示者 |
 | [提交前检查清单](submission-checklist.md) | 源码、报告、视频、引用和最终压缩包的逐项验收 | 提交前 |
 
+视频辅助脚本位于仓库根目录的 `scripts/`：
+
+- `show-kv-db.sh`：只读展示自定义 `kv.db` 的 superblock 和页统计。
+- `run-and-show-tests.sh`：执行质量门禁并输出适合录制的测试摘要。
+
+两个脚本都不是数据库修复工具；测试脚本会调用 `python test_protocol.py` 完成协议和持久化验证。
+
 ## 维护约定
 
 - 功能或文件格式发生变化时，同步更新 `architecture.md` 和 README 的功能范围。

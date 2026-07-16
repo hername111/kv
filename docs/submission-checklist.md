@@ -9,6 +9,8 @@
 - [ ] 源码仓库可以通过 README 的命令从干净环境启动。
 - [ ] 如果提交 GitHub 链接，链接无需登录即可访问；否则准备源码压缩包。
 - [ ] 提交包中包含 `README.md`、`docs/`、`Cargo.toml`、`Cargo.lock`、`demo-client/package-lock.json` 和源代码。
+- [ ] 如果视频展示数据库文件状态，提交包中包含 `scripts/show-kv-db.sh`，并确认它只读运行。
+- [ ] 提交前已运行 `bash scripts/run-and-show-tests.sh`，最终摘要为 `RESULT: ALL CHECKS PASSED`。
 - [ ] 提交包中不包含 `target/`、`node_modules/`、`dist/`、`kv_data/` 或临时截图/录屏文件。
 
 ## 二、报告事实核对
@@ -70,4 +72,3 @@ python test_protocol.py
 - [ ] 所有 Markdown 链接都能在仓库内找到目标文件。
 - [ ] 视频中的姓名、学号、分工和 GitHub 地址已经替换占位符。
 - [ ] 最终压缩包解压到新目录后，仍能按 README 启动。
-

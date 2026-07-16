@@ -1,0 +1,299 @@
+% !TEX program = xelatex
+\documentclass[UTF8,a4paper,12pt]{ctexart}
+\usepackage[a4paper,margin=2.4cm,headheight=15pt]{geometry}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\definecolor{codebg}{RGB}{247,248,250}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,pdftitle={KV Database 实验报告}}
+\lstset{basicstyle=\ttfamily\small,backgroundcolor=\color{codebg},frame=single,breaklines=true,columns=fullflexible,showstringspaces=false}
+\setlength{\emergencystretch}{3em}
+\pagestyle{fancy}\fancyhf{}\lhead{KV Database}\rhead{Rust 课程大作业实验报告}\cfoot{\thepage}
+\newcommand{\placeholder}[1]{\textbf{\color{red}【#1】}}
+\newcommand{\code}[1]{\texttt{#1}}
+\title{\textbf{KV Database}\\\large 基于 Rust 的教学型关系数据库设计与实现}
+\author{成员 1：\placeholder{姓名、学号、分工}\\成员 2：\placeholder{姓名、学号、分工}\\成员 3：\placeholder{如无请删除}}
+\date{\placeholder{提交日期}}
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+\begin{abstract}
+本文介绍使用 Rust 2024 实现的教学型关系数据库 KV Database。项目从固定大小磁盘页面、superblock、空闲页链表和 B+Tree 开始，贯通 catalog、缓冲池、SQL 处理、事务管理、MVCC、表级锁、MySQL Wire Protocol、HTTP API 与 React 工作台。当前基线包含 74 个 Rust 测试和 87 项协议/持久化测试。项目参考 SQLite、PostgreSQL、MySQL InnoDB 和 CMU BusTub 的公开设计思想，但没有复制其源代码。
+\end{abstract}
+\noindent\textbf{关键词：} Rust；关系数据库；B+Tree；事务；MVCC；持久化
+\tableofcontents
+\newpage
+\section{项目名称与团队分工}
+\subsection{项目名称}
+KV Database：基于 Rust 的教学型关系数据库。
+\subsection{团队成员与分工}
+提交前将占位符替换为真实信息，并确保与代码提交和视频一致。
+\begin{table}[H]\centering
+\caption{团队成员与主要分工}
+\begin{tabularx}{\textwidth}{p{2.5cm}p{3cm}X}
+\toprule
+姓名 & 学号 & 主要分工\\
+\midrule
+\placeholder{姓名 1} & \placeholder{学号 1} & \placeholder{存储、事务或测试}\\
+\placeholder{姓名 2} & \placeholder{学号 2} & \placeholder{SQL、协议或服务端}\\
+\placeholder{姓名 3} & \placeholder{学号 3} & \placeholder{Web、工程化或文档}\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{项目背景与目标}
+\subsection{项目背景}
+数据库系统同时涉及数据结构、操作系统、网络、编程语言和并发控制。仅调用现成数据库接口无法观察 SQL 如何变成页面读写，也无法验证事务和持久化的具体行为。因此，本项目实现一个规模可控但具有完整请求路径的教学型关系数据库。
+\subsection{项目目标}
+\begin{enumerate}[label=\arabic*.]
+\item 实现固定 4096 字节页面、superblock、catalog 和可复用空闲页链表。
+\item 实现固定阶 B+Tree，支持查找、插入、删除、分裂和叶节点范围扫描。
+\item 实现 SQL Lexer、Parser、Planner、Executor，覆盖 DDL、DML、条件查询、排序和等值 JOIN。
+\item 实现事务生命周期、写缓冲、事务内读己之写、MVCC 可见性和表级锁。
+\item 实现 MySQL Wire Protocol 最小子集、本地 HTTP API 和 React 工作台。
+\item 用自动化测试验证协议边界、页面损坏、缓存失效和重启持久化。
+\end{enumerate}
+\subsection{功能范围}
+\begin{table}[H]\centering
+\caption{当前版本功能范围}
+\begin{tabularx}{\textwidth}{p{2.5cm}X}
+\toprule
+模块 & 已实现内容\\
+\midrule
+SQL & \code{CREATE/DROP TABLE}、\code{CREATE INDEX}、\code{SELECT}、\code{INSERT}、\code{UPDATE}、\code{DELETE}\\
+查询 & 投影、\code{WHERE}、比较与逻辑表达式、\code{ORDER BY}、等值 \code{JOIN}\\
+事务 & \code{BEGIN}、\code{COMMIT}、\code{ROLLBACK}、写集、MVCC、表级锁\\
+存储 & 4 KiB 页面、Pager、slotted page、缓冲池、B+Tree、catalog、空闲页复用\\
+接口 & MySQL TCP、\code{/api/state}、\code{/api/query}、\code{/api/reset}\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{系统设计与实现思路}
+\subsection{总体架构}
+\begin{verbatim}
+MySQL client --> kv-network --+
+                              +--> kv-sql --> kv-txn --> kv-storage --> kv.db
+React UI ----> demo HTTP API -+
+\end{verbatim}
+\begin{enumerate}[label=\arabic*.]
+\item \code{kv-common}：共享类型、错误和 Pager trait。
+\item \code{kv-network}：握手、命令包、分片重组和结果集编码。
+\item \code{kv-sql}：Lexer、Parser、Planner 和 Executor。
+\item \code{kv-txn}：事务 ID、读写集、版本可见性和表级锁。
+\item \code{kv-storage}：页面、Pager、缓冲池、B+Tree、catalog 和刷盘。
+\item \code{kv-server}：MySQL TCP 服务和本地 HTTP 演示 API。
+\end{enumerate}
+模块依赖保持单向：网络和 HTTP 调用 SQL 执行器，执行器依赖事务与存储，存储层不依赖前端。
+
+\subsection{数据库文件和 superblock}
+数据库文件由固定 4096 字节页面组成，page 0 为 superblock。
+\begin{table}[H]\centering
+\caption{superblock 字段}
+\begin{tabularx}{\textwidth}{p{3cm}p{3cm}X}
+\toprule
+偏移 & 字段 & 含义\\
+\midrule
+0--7 & \code{next\_page\_id} & 下一个未分配页号\\
+8--15 & \code{free\_list\_head} & 空闲页链表头\\
+16--23 & \code{catalog\_root} & catalog B+Tree 根页\\
+24--31 & magic & \code{KVDBPAGE}\\
+32--35 & version & 当前为 1\\
+\bottomrule
+\end{tabularx}
+\end{table}
+\code{DiskPager::open} 检查文件长度、魔数、版本、页号范围和空闲链表环。空闲页前 8 字节保存前一个链表头，重新分配时从链表头弹出。该结构适合教学，但不包含生产数据库的 WAL、vacuum 和复杂恢复。
+
+\subsection{Slotted Page}
+\code{crates/kv-storage/src/page.rs} 使用槽目录和 tuple 数据分离的布局。页头保存 page id、tuple 数量、free start、free end 和标志位；槽项保存 tuple 偏移和长度。目录向前增长，tuple 从页尾向前增长。\code{SlottedPage::validate\_layout} 检查槽目录、tuple 偏移、页面边界和重叠关系，将损坏数据转换为错误而不是触发越界访问。
+
+\subsection{B+Tree 和缓冲池}
+B+Tree 内部节点保存分隔键和 child page，叶节点保存有序键值并通过 \code{next} 连接。插入时向下查找叶节点，按序插入；超容量后分裂节点、向父节点上推分隔键，根分裂时创建新根。固定阶设计在超出 4 KiB 时返回错误，尚未实现完整删除再平衡。
+
+\code{Pager} trait 抽象页面读写、分配、释放、刷盘和 catalog 根页。\code{BufferedPager} 使用 Mutex 保护的 LRU 缓存。释放页面时显式删除缓存，避免页号复用后读取旧副本；该行为由 \code{freed\_page\_is\_removed\_from\_cache} 覆盖。
+
+\subsection{SQL、事务与接口}
+SQL 依次经过 Lexer、Parser、Planner 和 Executor。Executor 从 catalog 和 B+Tree 读取数据，并结合事务上下文执行计划。事务写操作进入写缓冲和写集，提交时应用，回滚时丢弃；MVCC 判断版本可见性，表级锁限制冲突写入。项目不宣称完整 ACID 崩溃恢复，因为没有 WAL。
+
+MySQL 服务实现握手、命令包、OK/ERR 响应和结果集编码，支持 TCP 分片重组并拒绝超过 8 MiB 或截断的包。HTTP API 提供 \code{GET /api/state}、\code{POST /api/query} 和 \code{POST /api/reset}，请求体限制 64 KiB。React 工作台只消费真实状态快照，不复制 SQL 规则，展示 SQL、执行阶段、结果、schema、索引数量和后端 durationMicros。
+
+\section{关键实现代码索引}
+\small
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.38\textwidth}>{\raggedright\arraybackslash}p{0.54\textwidth}}
+\caption{代码位置与说明}\\
+\toprule
+代码位置 & 说明\\
+\midrule
+\endfirsthead
+\toprule
+代码位置 & 说明\\
+\midrule
+\endhead
+\code{crates/kv-storage/src/pager.rs} & 文件格式、superblock、空闲页链表和刷盘\\
+\code{crates/kv-storage/src/page.rs} & PageHeader、SlotEntry、页面编解码和边界验证\\
+\code{crates/kv-storage/src/btree.rs} & 内部/叶节点、插入、分裂、删除和扫描\\
+\code{crates/kv-storage/src/buffer.rs} & BufferPool、BufferedPager、LRU 和缓存失效\\
+\code{crates/kv-txn/src/manager.rs} & 事务生命周期、写集和提交/回滚\\
+\code{crates/kv-txn/src/mvcc.rs} & 版本链和可见性判断\\
+\code{crates/kv-sql/src/lexer.rs} & Token 定义和词法扫描\\
+\code{crates/kv-sql/src/parser.rs} & SQL 子集语法分析\\
+\code{crates/kv-sql/src/planner.rs} & AST 到执行计划\\
+\code{crates/kv-sql/src/executor.rs} & 查询、写入、事务和 JOIN\\
+\code{crates/kv-network/src/protocol.rs} & MySQL 包解析和结果编码\\
+\code{crates/kv-server/src/demo\_http.rs} & HTTP 路由、JSON 和请求大小限制\\
+\code{demo-client/src/App.jsx} & 工作台状态、执行历史和展示逻辑\\
+\bottomrule
+\end{longtable}
+
+\section{实验环境与复现}
+\subsection{启动命令}
+\begin{lstlisting}[language=bash]
+cargo run -p kv-server
+cd demo-client
+npm ci
+npm run dev
+\end{lstlisting}
+默认 MySQL 地址为 \code{127.0.0.1:3307}，HTTP API 为 \code{127.0.0.1:8080}，前端为 \code{127.0.0.1:5173}，数据文件为 \code{kv\_data/kv.db}。独立测试可设置 \code{KV\_DATA\_DIR=target/video-demo}。
+
+\subsection{质量门禁}
+\begin{lstlisting}[language=bash]
+cargo fmt --check --all
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+cargo doc --workspace --no-deps
+cd demo-client && npm ci && npm run build && cd ..
+python test_protocol.py
+git diff --check
+bash scripts/run-and-show-tests.sh
+\end{lstlisting}
+\code{test\_protocol.py} 自行管理 3307 端口的测试服务并验证协议、SQL、事务、错误处理和重启持久化，因此运行完整模式前应停止演示服务。
+
+\section{实验结果}
+\subsection{功能结果}
+\begin{table}[H]\centering
+\caption{主要功能验证结果}
+\begin{tabularx}{\textwidth}{p{3.4cm}X p{1.5cm}}
+\toprule
+实验项 & 操作与结果 & 状态\\
+\midrule
+建表与 catalog & 创建 users、orders；状态接口返回列定义；重启后表结构可加载 & 通过\\
+批量插入 & users 3 行、orders 3 行，工作台显示 6 条记录 & 通过\\
+二级索引 & 创建 \code{idx\_users\_name}，schema 显示索引数量 & 通过\\
+条件、排序和 JOIN & \code{WHERE}、\code{ORDER BY} 和 \code{users.id=orders.uid} 返回正确结果 & 通过\\
+事务读己之写 & Ada 年龄更新为 99 后同一事务内可读到 99 & 通过\\
+回滚 & \code{ROLLBACK} 后 Ada 年龄恢复为 28 & 通过\\
+持久化 & 关闭并重新打开数据库后，catalog 和记录仍可查询 & 通过\\
+边界处理 & 分片、截断、超大包、HTTP 超限、非法 JSON 和损坏页面返回错误 & 通过\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{自动化结果}
+\begin{table}[H]\centering
+\caption{当前测试基线}
+\begin{tabularx}{\textwidth}{p{4.5cm}X}
+\toprule
+检查 & 结果\\
+\midrule
+Rust 格式 & \code{cargo fmt --check --all} 通过\\
+Clippy & \code{-D warnings} 通过，无警告\\
+Rust workspace & 74 个测试通过\\
+前端构建 & Vite production build 通过\\
+协议/持久化 & 87 项通过，含重启恢复\\
+文档生成 & \code{cargo doc --workspace --no-deps} 通过\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{截图占位}
+提交前请用真实截图替换下列占位框，不能使用静态 mock。
+\begin{figure}[H]\centering\fbox{\parbox[c][3.5cm][c]{0.88\textwidth}{\centering\placeholder{截图 1：SQL A、两张表、六条记录和索引}}}\caption{建表、插入和索引}\end{figure}
+\begin{figure}[H]\centering\fbox{\parbox[c][3.5cm][c]{0.88\textwidth}{\centering\placeholder{截图 2：JOIN 结果及 durationMicros}}}\caption{查询和后端耗时}\end{figure}
+\begin{figure}[H]\centering\fbox{\parbox[c][3.5cm][c]{0.88\textwidth}{\centering\placeholder{截图 3：99 与 ROLLBACK 后的 28}}}\caption{事务和回滚}\end{figure}
+\begin{figure}[H]\centering\fbox{\parbox[c][3.5cm][c]{0.88\textwidth}{\centering\placeholder{截图 4：测试汇总和 kv.db superblock}}}\caption{自动化测试和持久化文件}\end{figure}
+
+\section{开源项目参考与差异}
+\subsection{SQLite}
+参考 SQLite \code{version-3.50.4} 的 \code{src/btree.c} 和 Database File Format 文档，SQLite 以公有领域声明发布。对照 \code{freePage2} 的页号检查和 free-list 更新逻辑。SQLite 使用 page 1 的 trunk/leaf freelist；本项目在 \code{pager.rs} 中以 superblock 加每个空闲页前 8 字节组成单链表。共同点是拒绝非法页号并维护可复用页面；本项目增加文件长度、魔数、版本和 freelist 环检查，并用重启测试验证复用。SQLite 的 journal/WAL、vacuum 和复杂事务恢复未实现。
+
+\subsection{PostgreSQL}
+参考 PostgreSQL \code{REL\_18\_0} 的 \code{src/include/storage/bufpage.h}，使用 PostgreSQL License。其 \code{PageHeaderData} 包含 \code{pd\_lower}、\code{pd\_upper}、\code{pd\_special} 和 \code{pd\_linp}。本项目的 \code{PageHeader} 使用 \code{free\_start/free\_end}，\code{SlotEntry} 保存 tuple 范围，\code{SlottedPage::validate\_layout} 负责边界检查。两者均分离槽目录和 tuple；本项目省略 LSN、checksum、special space 和 MVCC 页面头。
+
+\subsection{MySQL InnoDB}
+参考 MySQL \code{mysql-8.4.0} 的 \code{storage/innobase/include/page0types.h}，代码采用 GPLv2。对照 \code{PAGE\_N\_DIR\_SLOTS}、\code{PAGE\_N\_RECS}、\code{PAGE\_LEVEL} 和 \code{PAGE\_INDEX\_ID}。本项目在 \code{btree.rs} 中使用 \code{FLAG\_INTERNAL}、\code{FLAG\_LEAF}、键数量和叶节点 \code{next} 实现固定阶 B+Tree。InnoDB 的页面目录、聚簇索引、并发控制和恢复能力远超本项目；本项目只保留教学闭环，并在节点过页或字段损坏时返回错误。
+
+\subsection{CMU BusTub}
+参考 BusTub commit \code{f0d9e3753482d45f2b5919da1873684600b48508}，采用 MIT License。其 \code{BufferPoolManager} 提供 \code{NewPage}、\code{DeletePage}、\code{CheckedReadPage}、\code{CheckedWritePage} 和 \code{FlushPage}。本项目在 \code{kv-common} 定义 \code{Pager} trait，在 \code{buffer.rs} 中实现 \code{BufferPool} 和 \code{BufferedPager}。BusTub 使用 page guard、pin count、读写锁和 replacer；本项目使用 Rust trait、Mutex 和 LRU，并测试释放页面后的缓存失效。
+
+\begin{table}[H]\centering
+\caption{对比结论}
+\begin{tabularx}{\textwidth}{p{2.5cm}XX}
+\toprule
+维度 & 参考系统 & 本项目取舍\\
+\midrule
+页面 & SQLite 固定页；PostgreSQL slotted page & 4 KiB 页面、superblock、槽页和严格边界检查\\
+空闲页 & SQLite trunk/leaf freelist & 页内单链表，跨重启复用并检测链表环\\
+索引 & InnoDB 聚簇/二级索引和恢复 & 固定阶 B+Tree，叶链支持扫描，超页返回错误\\
+缓存 & BusTub guard/pin/replacer & Pager trait、Mutex 和 LRU，释放页时失效缓存\\
+事务 & 成熟数据库 WAL、锁和磁盘 MVCC & 写缓冲、内存版本链、表级锁，明确不承诺崩溃原子恢复\\
+\bottomrule
+\end{tabularx}
+\end{table}
+以上引用均为结构思想和短代码对照，不是上游源码复制。报告和视频应保留官方链接、固定版本和许可证。
+
+\section{代码规范与工程质量}
+项目采用 Rust 2024 workspace 和最低 Rust 1.94。核心模块提供模块级文档及关键算法注释，错误通过 \code{KvError} 传播，禁止 \code{unsafe}、\code{todo!}、\code{unimplemented!} 和调试宏。CI 检查格式、Clippy、Rust 测试、前端构建和协议测试。
+
+输入边界方面，MySQL 包限制为 8 MiB，HTTP 请求体限制为 64 KiB；页面解码校验长度和偏移；前端错误显示使用文本节点。这些措施服务于课程项目的正确性和可观察性，不等同于生产安全模型。
+
+\section{局限性与后续工作}
+\begin{itemize}
+\item 没有 WAL、checkpoint 和完整崩溃恢复。
+\item B+Tree 尚未实现按字节利用率分裂、删除合并和完整再平衡。
+\item 二级索引的非唯一键、增量维护和重启恢复能力有限。
+\item MVCC 版本主要位于内存，没有完整磁盘版本链和垃圾回收。
+\item 锁粒度为表级，没有等待队列和完整死锁图检测。
+\item MySQL 协议只覆盖项目 SQL 子集。
+\item HTTP 演示接口共享单个会话，不适合公网或多租户。
+\end{itemize}
+后续优先级为：带 LSN 的 WAL 和 checkpoint；B+Tree 删除再平衡；持久化二级索引；MVCC 版本落盘与 vacuum；行级锁和等待图。
+
+\section{结论}
+本项目完成了从 SQL 输入到磁盘页面的 Rust 数据库最小闭环。系统可通过 MySQL 客户端和 Web 工作台接受请求，经过 Lexer、Parser、Planner、Executor、事务层和 B+Tree 存储返回结果；数据库文件可在重启后恢复 catalog 和记录。自动化测试验证了协议边界、页面损坏、缓存失效和持久化行为。
+
+项目的课程价值在于每个层次均可观察并由小组自行实现。与 SQLite、PostgreSQL、InnoDB 和 BusTub 的关系是结构思想对照，不是代码复制。最终提交前仍需补齐真实成员信息、截图、GitHub 地址和视频文件，并再次运行质量门禁。
+
+\appendix
+\section{复现实验 SQL}
+\begin{lstlisting}[language=SQL]
+CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100), age INT);
+INSERT INTO users VALUES (1, 'Ada', 28), (2, 'Grace', 31), (3, 'Linus', 25);
+CREATE INDEX idx_users_name ON users (name);
+CREATE TABLE orders (id INT PRIMARY KEY, uid INT, amount FLOAT);
+INSERT INTO orders VALUES (101, 1, 299.0), (102, 2, 499.0), (103, 1, 129.0);
+SELECT * FROM users JOIN orders ON users.id = orders.uid;
+BEGIN;
+UPDATE users SET age = 99 WHERE id = 1;
+SELECT * FROM users WHERE id = 1;
+ROLLBACK;
+SELECT * FROM users WHERE id = 1;
+\end{lstlisting}
+
+\section{提交前替换清单}
+\begin{itemize}
+\item 替换所有姓名、学号、分工、日期和仓库地址占位符。
+\item 用真实截图替换四个占位框。
+\item 根据最终测试结果更新数字。
+\item 使用 XeLaTeX 编译并检查表格、代码和目录没有溢出。
+\item 只提交 PDF，不用 Word 替代 PDF。
+\end{itemize}
+\end{document}
