@@ -105,8 +105,17 @@ cd ..
 python test_protocol.py
 ```
 
-录制或提交前也可以使用 `bash scripts/run-and-show-tests.sh` 一次执行并汇总上述检查；数据库文件
-的只读页信息可用 `bash scripts/show-kv-db.sh target/video-demo/kv.db` 查看。
+录制或提交前也可以使用原生 PowerShell 脚本一次执行并汇总上述检查：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-and-show-tests.ps1
+```
+
+数据库文件的只读页信息可用以下命令查看：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -DbPath target/video-demo/kv.db
+```
 
 协议脚本会启动隔离的数据目录并验证 SQL、事务、索引、错误处理和重启持久化。当前基线包含 **74 个 Rust 测试**和 **87 项协议/持久化测试**；CI 还会在 GitHub Actions 中重复执行格式检查、Clippy、Rust 测试、前端构建和协议测试。
 

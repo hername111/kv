@@ -82,13 +82,13 @@ git diff --check
 
 ### 一键测试并展示结果
 
-仓库还提供 [scripts/run-and-show-tests.sh](../scripts/run-and-show-tests.sh)，用于把上述检查压缩成
+仓库还提供 [scripts/run-and-show-tests.ps1](../scripts/run-and-show-tests.ps1)，用于把上述检查压缩成
 一个可录制的终端画面。它按顺序执行 Rust 格式、Clippy、Rust 测试、文档生成、前端构建、协议/持久化
 测试和差异检查；每个阶段只显示最后几行，最后给出统一摘要。运行前先停止占用 3307 端口的演示服务，
 因为 `test_protocol.py` 会自行启动和重启测试服务：
 
-```bash
-bash scripts/run-and-show-tests.sh
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-and-show-tests.ps1
 ```
 
 预期结尾：
@@ -106,20 +106,20 @@ RESULT: ALL CHECKS PASSED
 
 ### 终端展示 kv.db 的真实状态
 
-仓库提供只读脚本 [scripts/show-kv-db.sh](../scripts/show-kv-db.sh)。它解析本项目自定义文件格式的
+仓库提供原生 PowerShell 只读脚本 [scripts/show-kv-db.ps1](../scripts/show-kv-db.ps1)。它解析本项目自定义文件格式的
 superblock，不把 `kv.db` 当作 SQLite 打开，也不会修改文件。脚本展示：文件大小、4096 字节页大小、
 物理页数、`KVDBPAGE` 魔数、格式版本、next page id、free-list head 和 catalog root。
 
-脚本需要 Git Bash、WSL 或 Linux/macOS 的 `bash` 和 `od`。服务使用本指南的演示目录时，在仓库根目录执行：
+服务使用本指南的演示目录时，在仓库根目录的 PowerShell 中执行：
 
-```bash
-bash scripts/show-kv-db.sh target/video-demo/kv.db
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -DbPath target/video-demo/kv.db
 ```
 
 如果使用默认目录：
 
-```bash
-bash scripts/show-kv-db.sh kv_data/kv.db
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -DbPath kv_data/kv.db
 ```
 
 建议在 SQL A 执行完成后录一次，画面应类似：
@@ -228,7 +228,7 @@ permalink 和台词全部以本节为准。
 | 0:38-1:08 | 回到工作台，粘贴 SQL A，点击执行；执行时指向六阶段链路，完成后点击 users/orders 标签 | “这里一次执行建表、批量插入和二级索引。请求真实经过 Lexer、Parser、Planner、事务层和 B+Tree。右侧可以直接检查 schema、主键、索引数量和当前记录，数据不是前端 mock，而是来自 Rust 服务的状态快照。” | 主体功能、索引、可观察性 |
 | 1:08-1:28 | 粘贴 SQL B 执行，停留在三行结果和耗时 | “查询层支持条件、投影、排序和等值 JOIN。这个例子把 users 与 orders 关联，结果由 MySQL 风格类型编码返回；右上角的微秒或毫秒数是后端执行器实测，不包含页面动画。” | 查询能力、真实结果、性能证据 |
 | 1:28-1:52 | 粘贴 SQL C，执行后指向 Ada=99；随后粘贴 SQL D，执行后指向 Ada=28 | “事务中更新后的 99 对当前会话立即可见，说明实现了读己之写；执行 ROLLBACK 后恢复为 28。底层由事务状态机、写缓冲、MVCC 可见性和表级锁协作，而不是在前端撤销。” | 事务核心功能、正确性演示 |
-| 1:52-2:08 | 切到测试终端，先框出 Rust 测试通过，再运行 `bash scripts/show-kv-db.sh target/video-demo/kv.db`，最后框出 `87 passed` | “测试覆盖 crate 单元和集成逻辑；协议脚本再通过真实 TCP 验证 DDL、DML、事务、错误处理和重启持久化。这里是数据库文件本身：4096 字节页、page 0 的 `KVDBPAGE` superblock、catalog root 和 free-list head 都来自磁盘，而不是前端模拟。” | 功能完善、代码规范、持久化证据 |
+| 1:52-2:08 | 切到测试终端，先框出 Rust 测试通过，再运行 `show-kv-db.ps1` 检查 `target/video-demo/kv.db`，最后框出 `87 passed` | “测试覆盖 crate 单元和集成逻辑；协议脚本再通过真实 TCP 验证 DDL、DML、事务、错误处理和重启持久化。这里是数据库文件本身：4096 字节页、page 0 的 `KVDBPAGE` superblock、catalog root 和 free-list head 都来自磁盘，而不是前端模拟。” | 功能完善、代码规范、持久化证据 |
 | 2:08-2:40 | 按本指南“四组固定源码镜头”切换 PostgreSQL、SQLite、InnoDB、BusTub 及本项目对应文件 | “PostgreSQL 的 `pd_lower/pd_upper/pd_linp` 对应我们的 `free_start/free_end/SlotEntry`，但我们没有 LSN 和 checksum；SQLite 的 `freePage2` 先做页号检查，我们在 `DiskPager::free_page` 之外还检查 superblock 和 freelist 环；InnoDB 的 `PAGE_LEVEL/PAGE_INDEX_ID` 对应页面元数据，而我们用 `FLAG_INTERNAL/FLAG_LEAF` 和叶节点 `next` 保留 B+Tree 最小闭环；BusTub 的五个 buffer API 被我们拆成 Rust `Pager` trait，并补了释放页后的缓存失效测试。所有摘录都保留许可证和官方链接，没有复制上游文件。” | 开源引用、区别、特色、改进、许可证 |
 | 2:40-2:55 | 回到工作台全景，停在表状态与存储记录 | “最终项目形成了可连接、可持久化、可测试、可视化的 Rust 数据库最小闭环。源码、设计依据和复现命令都已整理在仓库中。谢谢观看。” | 总结完整、画面收束 |
 
@@ -243,7 +243,7 @@ permalink 和台词全部以本节为准。
 - [ ] 事务画面先出现 99，再通过 `ROLLBACK` 恢复为 28。
 - [ ] 出现真实后端耗时，口头说明不包含动画时间。
 - [ ] 出现 Rust 测试/Clippy 和 `87 passed` 证据。
-- [ ] 终端出现 `show-kv-db.sh` 的只读检查结果，并能看到 `KVDBPAGE`、页大小和 catalog root。
+- [ ] 终端出现 `show-kv-db.ps1` 的只读检查结果，并能看到 `KVDBPAGE`、页大小和 catalog root。
 - [ ] 四个开源项目都出现固定版本、源码短摘录、许可证、官方 URL 和本项目对应文件。
 - [ ] 明确说出每个开源项目的具体字段、函数或 API，共同点、差异和本项目的一个改进/取舍。
 - [ ] 说清楚“只引用短摘录，不复制源码”，并在画面中保留许可证信息。
