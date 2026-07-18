@@ -68,7 +68,7 @@ npm ci
 npm run dev
 ```
 
-打开 <http://127.0.0.1:5173>。Vite 会将 `/api` 请求代理到 `127.0.0.1:8080`。工作台适合录制演示视频，也可以直接观察建表、写入、查询、事务回滚和索引效果。
+打开 <http://127.0.0.1:5173>。Vite 会将 `/api` 请求代理到 `127.0.0.1:8080`。工作台可以直接观察建表、写入、查询、事务回滚和索引效果。
 
 ### 3. 使用 MySQL 客户端
 
@@ -105,28 +105,30 @@ cd ..
 python test_protocol.py
 ```
 
-录制或提交前也可以使用原生 PowerShell 脚本一次执行并汇总上述检查：
+提交前也可以使用原生 PowerShell 脚本一次执行并汇总上述检查：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-and-show-tests.ps1
 ```
 
-如果要录制一个从 0 开始的演示，先清空专用演示目录，再用同一个目录启动服务：
+其中协议/持久化测试会自动选择临时本地端口，不会占用或依赖演示服务默认使用的 `3307` 端口。
+
+如果要从干净数据目录启动演示环境，先清空专用目录，再用同一个目录启动服务：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -ResetVideoDemo
-$env:KV_DATA_DIR = "target/video-demo"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -ResetDemoData
+$env:KV_DATA_DIR = "target/demo"
 cargo run -p kv-server
 ```
 
 数据库文件的只读页信息和 Web 工作台当前表数据可用以下命令查看：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -DbPath target/video-demo/kv.db
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\show-kv-db.ps1 -DbPath target/demo/kv.db
 ```
 
-`show-kv-db.ps1` 默认还会读取 `http://127.0.0.1:8080/api/state`，所以在 Web 执行 SQL 后可以看到表名、字段和行数据。它不会写入数据库；如果它在录制前显示已有页面或表数据，说明
-`target/video-demo/kv.db` 是之前演示留下的文件，先运行 `show-kv-db.ps1 -ResetVideoDemo` 后再启动服务。
+`show-kv-db.ps1` 默认还会读取 `http://127.0.0.1:8080/api/state`，所以在 Web 执行 SQL 后可以看到表名、字段和行数据。它不会写入数据库；如果启动前显示已有页面或表数据，说明
+`target/demo/kv.db` 是之前演示留下的文件，先运行 `show-kv-db.ps1 -ResetDemoData` 后再启动服务。
 
 协议脚本会启动隔离的数据目录并验证 SQL、事务、索引、错误处理和重启持久化。当前基线包含 **74 个 Rust 测试**和 **87 项协议/持久化测试**；CI 还会在 GitHub Actions 中重复执行格式检查、Clippy、Rust 测试、前端构建和协议测试。
 
@@ -141,9 +143,9 @@ crates/
   kv-network/     MySQL Wire Protocol、TCP 连接和结果编码
   kv-server/      服务组装与本地演示 HTTP API
 demo-client/      React + Vite 数据库工作台
-docs/             视频录制与提交指导
+docs/             使用、架构、测试和开源参考文档
 report/           实验报告 LaTeX 源文件和最终 PDF
-scripts/          视频录制和数据库文件检查辅助脚本
+scripts/          验证汇总和数据库文件检查辅助脚本
 test_protocol.py  端到端协议与持久化测试
 ```
 
@@ -178,11 +180,13 @@ Web UI ----> demo HTTP API-+
 | [MySQL InnoDB](https://dev.mysql.com/doc/refman/8.4/en/innodb-index-types.html) | `mysql-8.4.0`，GPLv2 | B+Tree 索引页与叶节点组织 | 固定阶教学 B+Tree，叶链支持扫描，超页或损坏字段直接报错 |
 | [CMU BusTub](https://github.com/cmu-db/bustub/tree/f0d9e3753482d45f2b5919da1873684600b48508) | commit `f0d9e375...b48508`，MIT | 教学数据库分层与 BufferPoolManager 职责 | 使用 Rust `Pager` trait、Mutex 和 LRU，并测试释放页后的缓存失效 |
 
-视频中需要展示的固定源码链接、对应本项目文件和口头说明全部集中在[视频录制与提交指导](docs/video-recording-guide.md)。
-
 ## 必要文档
 
-- [视频录制与提交指导](docs/video-recording-guide.md)：录制准备、演示 SQL、完整时间轴、源码对比、台词、故障预案和提交检查。
+- [文档索引](docs/README.md)：使用、架构、测试和开源参考文档入口。
+- [快速上手](docs/getting-started.md)：启动服务、运行工作台、执行 SQL。
+- [系统架构](docs/architecture.md)：模块划分、请求链路、数据库文件和 HTTP API。
+- [测试与验证](docs/testing.md)：质量门禁、协议测试和数据库文件检查。
+- [开源参考说明](docs/open-source-references.md)：参考来源、许可证、差异和边界。
 - [实验报告 PDF](report/main.pdf)：课程提交版报告。
 - [实验报告 LaTeX 源文件](report/main.tex)：报告的可维护源文件。
 

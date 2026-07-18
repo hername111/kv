@@ -7,6 +7,22 @@ New-Item -ItemType Directory -Path $logDir | Out-Null
 $passed = 0
 $failed = 0
 
+function Join-ProcessArguments {
+    param([string[]]$Items)
+
+    $quoted = @()
+    foreach ($item in $Items) {
+        if ($null -eq $item) {
+            $quoted += '""'
+        } elseif ($item -match '[\s"]') {
+            $quoted += '"' + ($item -replace '"', '\"') + '"'
+        } else {
+            $quoted += $item
+        }
+    }
+    return ($quoted -join " ")
+}
+
 function Invoke-CheckStep {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -27,28 +43,35 @@ function Invoke-CheckStep {
     $status = 1
     try {
         $resolvedCommand = Get-Command $Command -ErrorAction Stop
+        $processFile = $resolvedCommand.Source
+        $processArguments = $Arguments
         if ($resolvedCommand.CommandType -eq [System.Management.Automation.CommandTypes]::ExternalScript) {
             $processFile = (Get-Process -Id $PID).Path
             $processArguments = @(
                 "-NoProfile",
                 "-ExecutionPolicy", "Bypass",
-                "-File", ('"{0}"' -f $resolvedCommand.Source)
+                "-File", $resolvedCommand.Source
             ) + $Arguments
-        } else {
-            $processFile = $resolvedCommand.Source
-            $processArguments = $Arguments
         }
 
-        $process = Start-Process `
-            -FilePath $processFile `
-            -ArgumentList $processArguments `
-            -WorkingDirectory $WorkingDirectory `
-            -NoNewWindow `
-            -Wait `
-            -PassThru `
-            -RedirectStandardOutput $stdoutLog `
-            -RedirectStandardError $stderrLog
+        $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $processFile
+        $startInfo.Arguments = Join-ProcessArguments $processArguments
+        $startInfo.WorkingDirectory = $WorkingDirectory
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $startInfo
+        [void]$process.Start()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
         $status = $process.ExitCode
+
+        [IO.File]::WriteAllText($stdoutLog, $stdout, [Text.Encoding]::UTF8)
+        [IO.File]::WriteAllText($stderrLog, $stderr, [Text.Encoding]::UTF8)
 
         $output = @()
         if (Test-Path -LiteralPath $stdoutLog) {
@@ -85,7 +108,7 @@ try {
     Write-Host "=================================="
     Write-Host "root: $rootDir"
     Write-Host "logs: $logDir (removed on exit)"
-    Write-Host "Run this script before starting a demo server on port 3307."
+    Write-Host "Protocol tests use temporary local ports, so they can run even if the demo server uses 3307."
 
     Invoke-CheckStep -Name "Rust format" -Command "cargo" -Arguments @("fmt", "--check", "--all")
     Invoke-CheckStep -Name "Rust clippy" -Command "cargo" -Arguments @("clippy", "--workspace", "--all-targets", "--", "-D", "warnings")

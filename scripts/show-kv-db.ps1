@@ -6,9 +6,9 @@ param(
 
     [switch]$NoWebState,
 
-    [switch]$ResetVideoDemo,
+    [switch]$ResetDemoData,
 
-    [string]$DemoDir = "target/video-demo"
+    [string]$DemoDir = "target/demo"
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,7 +18,7 @@ function Get-WorkspacePath {
     return (Resolve-Path -LiteralPath ".").Path
 }
 
-function Clear-VideoDemoData {
+function Clear-DemoData {
     param([string]$Directory)
 
     $workspace = Get-WorkspacePath
@@ -43,7 +43,7 @@ function Clear-VideoDemoData {
 
     New-Item -ItemType Directory -Path $fullTarget -Force | Out-Null
 
-    Write-Host "Clean video demo data directory:"
+    Write-Host "Clean demo data directory:"
     Write-Host ("  {0}" -f $fullTarget)
     Write-Host "Start kv-server with:"
     Write-Host ('  $env:KV_DATA_DIR="{0}"' -f $Directory)
@@ -200,8 +200,8 @@ function Show-WebState {
     }
 }
 
-if ($ResetVideoDemo) {
-    Clear-VideoDemoData -Directory $DemoDir
+if ($ResetDemoData) {
+    Clear-DemoData -Directory $DemoDir
     exit 0
 }
 

@@ -2,7 +2,7 @@
 \documentclass[UTF8,a4paper,12pt]{ctexart}
 \usepackage[a4paper,margin=2.35cm,headheight=15pt]{geometry}
 \usepackage{booktabs,longtable,tabularx,array}
-\usepackage{xcolor,enumitem,graphicx,float,listings}
+\usepackage{xcolor,enumitem,float,listings,graphicx}
 \usepackage{xurl}
 \usepackage{hyperref,fancyhdr,caption}
 
@@ -13,7 +13,7 @@
   linkcolor=linkblue,
   urlcolor=linkblue,
   pdftitle={KV Database 实验报告},
-  pdfauthor={课程项目小组}
+  pdfauthor={胡辉宇、张文迪}
 }
 \lstset{
   basicstyle=\ttfamily\small,
@@ -31,140 +31,209 @@
 \rhead{Rust 课程大作业实验报告}
 \cfoot{\thepage}
 \newcommand{\code}[1]{\texttt{#1}}
+\captionsetup{font=small,labelfont=bf}
 
-\title{\textbf{KV Database}\\[0.5em]\large 基于 Rust 的教学型关系数据库设计与实现}
-\author{课程项目小组}
-\date{2026 年 7 月 16 日}
+\title{\textbf{KV Database}\\[0.5em]\large 基于 Rust 的教学型关系数据库系统}
+\author{胡辉宇 \quad 张文迪}
+\date{2026 年 7 月 18 日}
 
 \begin{document}
 \maketitle
 \thispagestyle{empty}
 
 \begin{abstract}
-本文报告一个使用 Rust 2024 实现的教学型关系数据库。系统以 4 KiB 磁盘页为基础，贯通 superblock、空闲页管理、slotted page、B+Tree、缓冲池、事务与 MVCC、SQL 处理、MySQL Wire Protocol、HTTP API 和 React 工作台。2026 年 7 月 16 日的复现实验中，74 个 Rust 测试和 87 项端到端协议/持久化测试全部通过，前端生产构建成功。项目参考 SQLite、PostgreSQL、MySQL InnoDB 和 CMU BusTub 的公开设计资料，但代码为小组独立实现；报告同时说明了结构差异、测试对比和当前限制。
+本文围绕 KV Database 的项目背景、系统设计、工程实现和实验验证展开。项目以 Rust 2024 为主要实现语言，从磁盘页、空闲页管理、slotted page、B+Tree、缓冲池、事务与 MVCC 开始搭建数据库内核，再向上实现 SQL 解析执行、MySQL Wire Protocol、本地 HTTP API 和 React Web 工作台，形成从 SQL 输入到磁盘持久化的完整链路。开发过程中，团队将数据库课程中的核心机制拆解为可运行、可观察、可测试的工程模块，并围绕页面边界、事务可见性、重启恢复、协议分片和演示一致性进行了多轮验证。实验结果显示，项目通过 74 个 Rust 单元/集成测试、87 项端到端协议与持久化测试，前端生产构建和数据库文件检查脚本均可复现。本文结合系统截图、命令行输出和测试结果展示主要功能，并对 SQLite、PostgreSQL、MySQL InnoDB、CMU BusTub 等参考项目的来源、借鉴点、差异和改进进行说明。
 \end{abstract}
 
-\noindent\textbf{关键词：}Rust；关系数据库；B+Tree；事务；MVCC；持久化
+\noindent\textbf{关键词：}Rust；关系数据库；B+Tree；事务；MVCC；MySQL 协议；持久化
 
 \tableofcontents
 \newpage
 
 \section{项目名称}
 
-\textbf{项目名称：}KV Database——基于 Rust 的教学型关系数据库。
+\textbf{项目名称：}KV Database——基于 Rust 的教学型关系数据库系统。
 
-项目采用 Cargo workspace 组织六个核心 crate，并提供 MySQL TCP 接口和 Web 工作台。其定位不是对成熟数据库做功能复刻，而是以可运行、可观察、可测试的规模展示一条完整链路：SQL 输入经过词法、语法、计划和执行阶段，进入事务层与 B+Tree 存储，最终落入磁盘页。
+KV Database 是一个面向课程实践的关系数据库系统原型。项目在课程大作业规模内实现了客户端连接、SQL 执行、事务处理、页面存储、持久化和可视化观察等关键能力。系统采用 Cargo workspace 组织后端核心模块，并提供 MySQL TCP 接口、HTTP API 和 React Web 工作台。命令行客户端用于验证协议访问路径，图形界面用于观察表结构、索引数量、记录快照和后端执行耗时。
 
-\section{团队成员与分工}
-
-仓库提交历史能够识别到 \code{hername111}、\code{huiyuhu} 和 \code{Vandy0915} 三个 Git 署名，但仓库中没有可核验的真实姓名、学号与最终分工记录。为避免将昵称或邮箱误写为个人信息，表~\ref{tab:members} 保留正式填报位置；提交者必须在最终提交前按实际情况补齐或删除多余行。
+项目最终交付内容覆盖数据库内核、服务端、协议入口、Web 工作台、自动化测试、演示脚本和报告文档。表~\ref{tab:deliverables} 概括了最终成果。
 
 \begin{table}[H]
 \centering
-\caption{团队成员与主要分工（个人信息待提交者核实）}
-\label{tab:members}
-\begin{tabularx}{\textwidth}{p{2.7cm}p{3.1cm}X}
+\caption{项目交付物概览}
+\label{tab:deliverables}
+\begin{tabularx}{\textwidth}{p{3.2cm}X}
 \toprule
-姓名 & 学号 & 主要分工\\
+交付物 & 说明\\
 \midrule
-未提供 & 未提供 & 存储层、事务层、测试等实际负责内容待核实\\
-未提供 & 未提供 & SQL、网络协议、服务端等实际负责内容待核实\\
-未提供 & 未提供 & Web 工作台、工程化、文档等实际负责内容待核实\\
+数据库内核 & 实现页面、B+Tree、缓冲池、catalog、事务、MVCC 和 SQL 执行等核心能力。\\
+协议与服务端 & 提供 MySQL Wire Protocol 入口和本地 HTTP API，支持命令行客户端与 Web 工作台复用同一执行器。\\
+Web 工作台 & 提供 SQL 编辑、执行链路、执行结果、表结构、索引状态、存储记录和执行历史展示。\\
+自动化测试 & 覆盖 Rust 模块测试、协议端到端测试、持久化重启测试、前端生产构建和代码质量门禁。\\
+项目文档 & 包含 README、docs 项目文档、LaTeX 实验/项目报告和开源参考说明。\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-建议按代码提交、开发记录和演示内容填写分工，不把“共同完成”作为唯一描述。若实际成员少于三人，应删除多余行；若多于三人，应按相同格式增加。
+\section{团队成员与分工}
+
+团队成员与主要分工见表~\ref{tab:members}。分工按照模块责任和工程贡献描述，便于与仓库结构、测试内容和演示流程对应。
+
+\begin{table}[H]
+\centering
+\caption{团队成员与主要分工}
+\label{tab:members}
+\begin{tabularx}{\textwidth}{p{2.5cm}p{2.8cm}X}
+\toprule
+姓名 & 学号 & 主要负责内容\\
+\midrule
+胡辉宇 & 24336043 & 项目整体架构设计；存储引擎 \code{kv-storage} 开发；磁盘页、B+Tree、缓冲池和空闲页复用实现；事务管理 \code{kv-txn} 开发；MVCC 可见性与表级锁实现。\\
+张文迪 & 24336155 & SQL 解析与执行 \code{kv-sql} 开发；Planner 与 Executor 实现；网络协议 \code{kv-network} 开发；HTTP API 与 Web 工作台 \code{demo-client} 实现；自动化测试、文档与实验报告整理。\\
+\bottomrule
+\end{tabularx}
+\end{table}
 
 \section{项目背景与目标}
 
-\subsection{项目背景}
+\subsection{选题背景}
 
-数据库系统同时涉及数据结构、文件系统、网络协议、并发控制和编程语言。直接调用现有数据库只能看到接口结果，难以观察 SQL 如何变成执行计划、记录如何组织为页面、事务提交如何影响可见性以及重启后元数据如何恢复。因此，本项目选择从零实现规模受控的数据库内核，以 Rust 的所有权、trait、错误传播和线程安全机制串联课程知识。
+数据库系统是计算机系统课程中综合性较强的方向，涉及文件组织、索引结构、查询处理、事务并发、网络通信和工程化测试。成熟数据库能够稳定提供 SQL 能力，但其内部机制通常被复杂工程细节隐藏起来：一条 SQL 如何被解析为执行计划，记录如何写入固定大小页面，事务如何影响可见性，服务重启后元数据如何恢复，这些问题很难仅通过调用接口得到直观理解。因此，本项目选择实现一个规模受控的教学型关系数据库，把抽象的数据库原理落实为可以运行、调试和复现实验的代码。
+
+选择 Rust 作为实现语言也有明确的实践意义。数据库内核涉及所有权边界、共享状态、错误传播和并发访问，Rust 的所有权模型、trait 抽象、\code{Result} 错误处理和线程安全类型能够帮助系统在不依赖垃圾回收的前提下保持较强的内存安全性。项目开发过程也把 Rust 的语言特性放入了真实系统场景中：页面缓存、事务状态、网络连接和错误返回都经过了清晰的类型设计。
 
 \subsection{拟解决的问题}
 
-项目重点解决以下问题：一是将变长记录可靠地编码到固定大小页面，并拒绝越界或损坏数据；二是通过 B+Tree 和缓冲池完成有序存取及页面复用；三是建立从 SQL 到事务写集再到磁盘的执行路径；四是通过 MySQL 协议和 Web 界面提供可验证入口；五是用自动化测试覆盖正常功能、输入边界和重启持久化。
+围绕上述背景，项目主要聚焦五类核心问题：
+
+\begin{enumerate}[label=\arabic*.]
+\item \textbf{完整请求链路贯通。}实现 \code{SQL -> Lexer -> Parser -> Planner -> Executor -> Transaction -> Storage} 的完整路径，使一条 SQL 能够真实进入事务层并写入存储引擎。
+\item \textbf{可持久化的数据组织。}基于 4 KiB 固定大小页面、superblock、空闲页链表、catalog 和 B+Tree，支持服务正常重启后的表结构与数据恢复。
+\item \textbf{事务与并发基础。}支持 \code{BEGIN}、\code{COMMIT}、\code{ROLLBACK}，实现写缓冲、读己之写、MVCC 可见性和表级锁。
+\item \textbf{多入口访问。}提供兼容常用 MySQL 客户端的 TCP 协议接口，同时提供本地 HTTP API 和 React Web 工作台，兼顾标准接口和教学演示。
+\item \textbf{可复现实验验证。}通过单元测试、端到端协议测试、前端构建和数据库文件检查脚本，验证正常功能、边界输入、重启持久化和演示数据真实性。
+\end{enumerate}
 
 \subsection{预期功能与完成范围}
 
 \begin{table}[H]
 \centering
-\caption{目标功能与当前完成情况}
-\begin{tabularx}{\textwidth}{p{2.5cm}X p{1.5cm}}
+\caption{预期功能与当前完成情况}
+\begin{tabularx}{\textwidth}{p{2.3cm}X p{1.5cm}}
 \toprule
-模块 & 目标与已实现功能 & 状态\\
+模块 & 功能范围 & 状态\\
 \midrule
-存储 & 4 KiB 页面、superblock、slotted page、空闲页链表、缓冲池、B+Tree、catalog & 完成\\
-SQL & DDL/DML、投影、条件表达式、排序、等值 JOIN、Lexer/Parser/Planner/Executor & 完成\\
-事务 & \code{BEGIN/COMMIT/ROLLBACK}、写缓冲、读己之写、MVCC 可见性、表级锁 & 完成\\
-协议 & MySQL 握手、命令包、OK/ERR、结果集、TCP 分片重组与大小限制 & 完成\\
-展示 & HTTP 状态/查询/重置接口和 React 工作台 & 完成\\
-恢复 & catalog 与记录跨正常重启持久化 & 完成\\
-崩溃恢复 & WAL、checkpoint、崩溃原子恢复 & 未实现\\
+SQL & \code{CREATE TABLE}、\code{DROP TABLE}、\code{CREATE INDEX}、\code{SELECT}、\code{INSERT}、\code{UPDATE}、\code{DELETE} & 完成\\
+查询 & \code{WHERE} 条件过滤、投影、\code{ORDER BY} 排序、等值 \code{JOIN}、比较与逻辑表达式 & 完成\\
+事务 & \code{BEGIN}、\code{COMMIT}、\code{ROLLBACK}、写缓冲、MVCC 可见性、表级锁 & 完成\\
+存储 & 4 KiB 页面、Pager、slotted page、缓冲池、B+Tree、catalog、空闲页复用 & 完成\\
+协议 & MySQL 握手、命令包、结果集、错误响应、TCP 分片组包与请求大小限制 & 完成\\
+Web & SQL 编辑器、执行历史、结果表、schema 面板、索引状态、数据重置 & 完成\\
+恢复 & 正常关闭/重启后的表结构、记录和删表状态恢复 & 完成\\
+崩溃恢复 & WAL、checkpoint、崩溃原子恢复、完整死锁检测 & 未实现\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\section{系统设计与实现思路}
+\subsection{项目使用场景与完成度评价}
 
-\subsection{总体架构}
-
-\begin{verbatim}
-MySQL client --> network --+
-                           +--> SQL --> txn --> storage --> kv.db
-React UI ----> HTTP API ---+
-\end{verbatim}
+项目主要面向课程展示、数据库原理学习和 Rust 系统编程实践三个场景。课程展示侧重系统可运行、过程可观察；数据库原理学习侧重页面、索引、事务和持久化机制可解释；Rust 系统编程实践则侧重模块边界、错误处理和测试复现。结合这三个场景，项目完成度主要从以下方面评价：
 
 \begin{enumerate}[label=\arabic*.]
-\item \code{kv-common}：共享类型、错误定义和 \code{Pager} trait。
-\item \code{kv-storage}：页面编解码、磁盘 Pager、LRU 缓冲、B+Tree、catalog。
-\item \code{kv-txn}：事务生命周期、读写集、版本链、可见性和表级锁。
-\item \code{kv-sql}：Lexer、Parser、Planner 和 Executor。
-\item \code{kv-network}：MySQL 握手、包解析、分片重组和结果集编码。
-\item \code{kv-server}：组装 TCP 服务与本地 HTTP 演示 API。
+\item Web 工作台和 MySQL 客户端均可执行 SQL，并返回真实后端结果。
+\item 建表、插入、查询、更新、删除、索引、事务提交和事务回滚均可被演示和测试。
+\item 服务正常重启后，表结构、记录数据和删表状态能够恢复。
+\item 测试流程能够在干净环境中复现，结果由自动化脚本和终端输出支撑。
+\item 报告和演示材料能够说明参考开源项目的来源、许可证、借鉴点、本项目差异和当前边界。
 \end{enumerate}
 
-依赖保持单向：接口层调用 SQL 执行层，执行层依赖事务和存储，底层不依赖前端。该划分使各层可以独立单元测试，也让同一个执行器同时服务 MySQL 客户端和 Web 工作台。
+\section{系统设计与实现思路}
+
+\subsection{整体架构}
+
+项目采用分层架构，依赖关系自上而下保持单向。MySQL 客户端和 Web 工作台是两个入口，但二者最终共享同一个 SQL 执行器、事务层和存储层。
+
+\begin{verbatim}
+MySQL CLI --> kv-network --+
+                           +--> kv-sql --> kv-txn --> kv-storage --> kv.db
+Web UI ----> HTTP API -----+
+\end{verbatim}
+
+\begin{table}[H]
+\centering
+\caption{主要模块职责}
+\begin{tabularx}{\textwidth}{p{3.2cm}X}
+\toprule
+模块 & 职责\\
+\midrule
+\code{kv-common} & 跨模块共享的类型、错误定义和 \code{Pager} trait。\\
+\code{kv-storage} & 页面管理、磁盘 Pager、slotted page、缓冲池、B+Tree、catalog 和存储引擎。\\
+\code{kv-txn} & 事务生命周期管理、写缓冲、MVCC 可见性和表级锁。\\
+\code{kv-sql} & Lexer、Parser、Planner 和 Executor，负责 SQL 语义到存储操作的转换。\\
+\code{kv-network} & MySQL Wire Protocol、TCP 连接处理、分片重组和结果编码。\\
+\code{kv-server} & 服务组装、本地 HTTP API、演示状态查询和重置接口。\\
+\code{demo-client} & React + Vite 数据库工作台，展示 SQL、结果集、schema、索引和后端耗时。\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+这种结构的核心价值在于边界清晰。网络层和 HTTP 层承担协议转换，SQL 层负责语法语义和执行调度，事务层处理可见性与提交/回滚，存储层不依赖前端或网络协议。入口层复用同一套业务规则，使 MySQL 客户端、Web 工作台和自动化测试获得一致的执行结果。
+
+\subsection{设计原则与方案取舍}
+
+项目设计遵循三个原则。第一，\textbf{教学闭环优先}：系统从 SQL 输入一直贯通到磁盘页，协议、SQL、事务和存储层共同构成完整执行路径。第二，\textbf{可验证优先}：关键模块都配有自动化测试或脚本观察方式，例如数据库文件检查脚本可以直接读取 superblock 和 Web 状态，使实验结果具备文件级和接口级证据。第三，\textbf{复杂度受控}：当前阶段聚焦页面、B+Tree、事务语义、协议基本路径和演示可观察性，WAL、完整崩溃恢复、行级锁和完整 MySQL 兼容性作为后续扩展方向。
+
+这些取舍体现了团队对课程项目规模的判断：项目在功能数量、实现深度和可复现性之间保持平衡，重点放在链路贯通、边界清楚和证据可复现上。
+
+\subsection{工程实现过程与关键行动}
+
+项目开发过程大致经历了四个阶段。第一阶段集中在存储层，团队先确定 4 KiB 固定页、superblock、空闲页链表和 slotted page 的文件组织方式，再实现 B+Tree 查找、插入、分裂和扫描。这个阶段重点处理变长记录、页内槽目录、文件格式校验、页号复用和损坏文件检测等底层问题。
+
+第二阶段把存储能力接入事务层和 SQL 层。团队实现 Lexer、Parser、Planner、Executor，并将 \code{CREATE TABLE}、\code{INSERT}、\code{SELECT}、\code{UPDATE}、\code{DELETE} 等语句映射到 catalog、B+Tree 和事务写缓冲。事务部分加入 \code{BEGIN}、\code{COMMIT}、\code{ROLLBACK}、读己之写和 MVCC 可见性，使系统能够展示数据库课程中常见的事务语义。
+
+第三阶段补齐外部访问入口。团队实现 MySQL Wire Protocol 的握手、命令包、结果集和错误响应，使系统可以被标准 MySQL 客户端连接；同时实现本地 HTTP API 和 React Web 工作台，将 SQL 执行链路、schema、索引数量、存储记录和执行耗时展示出来。前端通过后端 API 获取状态，不在浏览器端伪造 SQL 结果，因此界面展示与后端状态保持一致。
+
+第四阶段围绕复现和展示进行整理。团队补充 Rust 模块测试、端到端 TCP 协议测试、重启持久化测试、前端生产构建检查和 PowerShell 演示脚本，并将使用、架构、测试和开源参考整理到 docs 文档中。这个阶段也暴露出 Windows PowerShell 与 bash 脚本兼容性、演示数据库初始状态、Web 操作后脚本读取哪个数据库文件等实际问题，最终通过清理演示数据库、统一脚本入口和增加只读检查输出来解决。
 
 \subsection{关键数据结构}
 
-数据库文件由固定 4096 字节页面组成，page 0 为 superblock。其关键字段如表~\ref{tab:superblock} 所示。
+\textbf{数据库文件与 superblock。}数据库文件由固定 4096 字节页面组成，page 0 是 superblock，保存 \code{next\_page\_id}、\code{free\_list\_head}、\code{catalog\_root}、\code{KVDBPAGE} 魔数和格式版本。打开文件时会检查文件长度、魔数、版本、页号范围和空闲链表环，使损坏文件能够以明确错误返回。
 
 \begin{table}[H]
 \centering
 \caption{superblock 关键字段}
-\label{tab:superblock}
-\begin{tabularx}{\textwidth}{p{2.5cm}p{3.5cm}X}
+\begin{tabularx}{\textwidth}{p{2.5cm}p{3.4cm}X}
 \toprule
 偏移 & 字段 & 作用\\
 \midrule
-0--7 & \code{next\_page\_id} & 下一个未分配页号\\
-8--15 & \code{free\_list\_head} & 空闲页单链表头\\
-16--23 & \code{catalog\_root} & catalog B+Tree 根页\\
-24--31 & \code{KVDBPAGE} & 文件魔数\\
-32--35 & \code{version} & 格式版本，当前为 1\\
+0--7 & \code{next\_page\_id} & 下一个可分配页面编号。\\
+8--15 & \code{free\_list\_head} & 空闲页单链表头，用于释放页复用。\\
+16--23 & \code{catalog\_root} & catalog B+Tree 根页，保存表元数据入口。\\
+24--31 & \code{KVDBPAGE} & 文件格式魔数，用于拒绝错误文件类型。\\
+32--35 & \code{version} & 文件格式版本，当前版本为 1。\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\code{SlottedPage} 的页头保存 page id、tuple 数量、\code{free\_start}、\code{free\_end} 和标志位。槽目录从页首向后增长，tuple 数据从页尾向前增长，槽项记录 tuple 的偏移和长度。\code{validate\_layout} 检查槽目录边界、tuple 范围和重叠关系，使损坏数据返回 \code{KvError} 而不是触发越界访问。
+\textbf{Slotted Page。}页面内部采用槽目录组织变长 tuple。页头保存 page id、tuple 数量、\code{free\_start}、\code{free\_end} 和标志位；槽目录记录 tuple 偏移与长度；tuple 数据区从页面另一端增长。实现中的 \code{validate\_layout} 会检查槽目录边界、tuple 范围和重叠关系，使损坏数据以显式错误返回。
 
-\subsection{核心算法}
+\textbf{B+Tree。}B+Tree 内部节点保存分隔键和子页号，叶节点保存有序键值并通过 \code{next} 形成叶链。插入时先沿分隔键定位叶页，再按序插入；节点超容量时分裂并向父节点上推分隔键；根节点分裂时创建新根。叶链支持范围扫描和顺序遍历。当前删除路径覆盖基本删除，但尚未实现完整合并和再平衡。
 
-\textbf{B+Tree。}内部节点保存分隔键和子页号，叶节点保存有序键值并以 \code{next} 相连。插入先沿分隔键定位叶页，再按序插入；节点超容量时分裂并向父节点上推分隔键，根分裂时创建新根。叶链支持范围扫描。当前删除仅覆盖基础路径，尚未实现完整合并与再平衡。
+\textbf{缓冲池。}项目使用 Rust \code{Pager} trait 抽象页面读写、分配、释放和刷盘，并通过 \code{BufferedPager} 包装磁盘 Pager。缓冲池使用 \code{Mutex} 保护 LRU 状态；释放页面时显式删除缓存副本，保证页号复用后读取到的是新页面内容。
 
-\textbf{页面分配与缓存。}\code{DiskPager} 从空闲页链表优先分配页面，没有空闲页时扩展文件。打开文件时检查长度、魔数、版本、页号范围和链表环。\code{BufferedPager} 用 Mutex 保护 LRU 页面副本；释放页面时显式失效缓存，避免页号复用后读到旧内容。
+\subsection{核心算法与实现流程}
 
-\textbf{SQL 执行。}输入依次经过 Lexer、Parser、Planner 和 Executor。执行器读取 catalog 与 B+Tree，并在事务上下文中处理查询或写入。事务写操作先进入写缓冲与写集，提交时应用，回滚时丢弃；MVCC 版本链负责可见性判断，表级锁限制冲突访问。
+\textbf{SQL 执行流程。}SQL 字符串先进入 Lexer 生成 token，再由 Parser 构建语法树，Planner 生成执行计划，Executor 根据计划调用事务层与存储层。对于写操作，执行器先进入事务写缓冲，提交时落盘，回滚时丢弃；对于读操作，执行器结合事务可见性规则读取当前会话可见版本。
 
-\textbf{协议与展示。}MySQL 服务实现握手、命令包、OK/ERR 和结果集编码，可重组 TCP 分片，并拒绝超过 8 MiB 或截断的包。HTTP API 提供 \code{GET /api/state}、\code{POST /api/query}、\code{POST /api/reset}，请求体上限为 64 KiB。React 工作台从真实 API 获取 schema、记录、执行阶段和后端耗时，不在前端复制 SQL 规则。
+\textbf{MVCC 与表级锁。}事务层维护事务状态、写集和版本可见性，使同一事务内可以读到自己尚未提交的写入，即 read-your-writes。当前锁粒度为表级锁，覆盖演示所需的并发安全基础；行级锁和死锁图属于后续可扩展方向。
+
+\textbf{页面分配与回收。}分配新页面时优先从 \code{free\_list\_head} 指向的空闲页链表取页，若无空闲页则使用 \code{next\_page\_id} 扩展文件。释放页面时将其写入空闲链表。测试覆盖了重启后的页面复用和空闲链表环检测。
+
+\textbf{协议与展示。}MySQL 服务实现握手、命令包、OK/ERR 包和结果集编码，并支持 TCP 分片组包。HTTP API 提供 \code{GET /api/state}、\code{POST /api/query}、\code{POST /api/reset}，请求体上限为 64 KiB。React 工作台通过后端 API 获取状态，不在前端复制 SQL 或事务规则，因此展示结果来自真实后端状态。
 
 \subsection{关键代码位置}
 
-\footnotesize
-\begin{longtable}{>{\raggedright\arraybackslash}p{0.42\textwidth}>{\raggedright\arraybackslash}p{0.50\textwidth}}
-\caption{实现模块与代码位置}\\
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.46\textwidth}>{\raggedright\arraybackslash}p{0.46\textwidth}}
+\caption{关键实现文件}\\
 \toprule
 文件 & 主要实现\\
 \midrule
@@ -173,59 +242,100 @@ React UI ----> HTTP API ---+
 文件 & 主要实现\\
 \midrule
 \endhead
-\code{crates/kv-storage/src/pager.rs} & 文件格式、superblock、空闲页链表和刷盘\\
-\code{crates/kv-storage/src/page.rs} & Slotted Page 编解码和边界验证\\
-\code{crates/kv-storage/src/btree.rs} & 节点查找、插入、分裂、删除和扫描\\
-\code{crates/kv-storage/src/buffer.rs} & LRU 缓冲池和缓存失效\\
-\code{crates/kv-txn/src/} & 事务管理、MVCC 与锁\\
-\code{crates/kv-sql/src/} & SQL 词法、语法、计划与执行\\
-\code{crates/kv-network/src/protocol.rs} & MySQL 包解析和结果编码\\
-\code{crates/kv-server/src/demo\_http.rs} & HTTP 路由、JSON 和请求限制\\
-\code{demo-client/src/App.jsx} & 工作台状态、历史与展示逻辑\\
+\code{crates/kv-storage/src/pager.rs} & 数据库文件格式、superblock、空闲页链表、文件打开校验和刷盘。\\
+\code{crates/kv-storage/src/page.rs} & Slotted Page 编解码、槽目录、tuple 边界验证。\\
+\code{crates/kv-storage/src/btree.rs} & B+Tree 查找、插入、分裂、删除和扫描。\\
+\code{crates/kv-storage/src/buffer.rs} & LRU 缓冲池、页面缓存和释放页缓存失效。\\
+\code{crates/kv-txn/src/} & 事务状态机、MVCC、写缓冲和表级锁。\\
+\code{crates/kv-sql/src/} & 词法分析、语法分析、计划生成和 SQL 执行。\\
+\code{crates/kv-network/src/protocol.rs} & MySQL 包解析、结果编码、分片与错误响应。\\
+\code{crates/kv-server/src/demo\_http.rs} & HTTP 路由、状态快照、查询执行和重置接口。\\
+\code{demo-client/src/App.jsx} & Web 工作台状态、执行历史、schema 与结果展示。\\
 \bottomrule
 \end{longtable}
-\normalsize
 
 \section{实验结果}
 
-\subsection{实验环境与方法}
+\subsection{实验环境与复现方法}
 
-本次验证日期为 2026 年 7 月 16 日，操作系统为 Windows，测试对象为当前 Cargo workspace 和 React/Vite 前端。使用以下命令复现实验：
+实验在 Windows 环境下进行，使用 Rust/Cargo、Node.js/npm 和 Python 脚本完成验证。核心复现命令如下：
 
 \begin{lstlisting}[language=bash]
 cargo fmt --check --all
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
-cd demo-client && npm run build && cd ..
+cargo doc --workspace --no-deps
+
+cd demo-client
+npm ci
+npm run build
+cd ..
+
 python test_protocol.py
+git diff --check
 \end{lstlisting}
 
-\code{test\_protocol.py} 启动隔离的服务器和数据目录，经 MySQL 协议执行 DDL、DML、条件查询、排序、JOIN、索引、事务和错误输入；随后两次重启服务，验证数据、元数据和删表状态的持久化。
+仓库还提供 \code{scripts/run-and-show-tests.ps1}，将上述质量门禁整理为提交核验用的终端摘要；\code{scripts/show-kv-db.ps1} 以只读方式解析数据库文件页信息，并在服务运行时读取 Web API 当前表数据，用于交叉验证 Web 操作、后端状态和数据库文件之间的对应关系。
 
-\subsection{功能与测试结果}
+\subsection{已实现功能总览}
 
 \begin{table}[H]
 \centering
-\caption{实测结果汇总}
-\begin{tabularx}{\textwidth}{p{3.2cm}X p{1.5cm}}
+\caption{功能验证结果}
+\begin{tabularx}{\textwidth}{p{3.1cm}X p{1.6cm}}
 \toprule
 实验项 & 实际结果 & 结论\\
 \midrule
-Rust 测试 & 8 个测试目标共 74 项，74 项通过、0 失败 & 通过\\
-MySQL 连接 & 握手、认证、分片重组、截断包和超大包处理通过 & 通过\\
-SQL 功能 & 建表/删表、增删改查、NULL、条件、排序、等值 JOIN、索引通过 & 通过\\
-事务 & 读己之写、提交、回滚、UPDATE+DELETE 组合路径通过 & 通过\\
-持久化 & 两次重启后数据、元数据和已删表状态均正确 & 通过\\
-端到端测试 & 87 项全部通过、0 失败 & 通过\\
-前端构建 & Vite 7.3.5 转换 1579 个模块，2.23 秒完成生产构建 & 通过\\
+SQL DDL/DML & 建表、删表、建索引、插入、更新、删除和查询均可执行。 & 通过\\
+查询能力 & 条件过滤、投影、排序、等值 JOIN、比较和逻辑表达式均有测试覆盖。 & 通过\\
+事务语义 & \code{BEGIN/COMMIT/ROLLBACK}、事务内读己之写、回滚恢复均通过。 & 通过\\
+持久化 & 正常重启后表结构、记录数据、已删表状态均可恢复。 & 通过\\
+协议接口 & MySQL 握手、命令包、结果集、错误包、TCP 分片和截断输入均可处理。 & 通过\\
+Web 工作台 & 可执行 SQL、查看结果集、schema、索引数量、记录数量和后端执行耗时。 & 通过\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Rust 测试的分布为：\code{kv-common} 5 项、\code{kv-network} 10 项、\code{kv-server} 3 项、兼容性测试 2 项、集成测试 3 项、\code{kv-sql} 20 项、\code{kv-storage} 23 项、\code{kv-txn} 8 项。存储测试中特别覆盖截断数据库文件、损坏槽目录、B+Tree 损坏页、过大记录、释放页缓存失效和空闲链表跨重启恢复。
+\subsection{项目界面与功能展示}
 
-\subsection{命令行示例}
+项目成果既体现在后端模块中，也体现在最终系统的使用方式中。图~\ref{fig:web-index} 展示 Web 工作台的核心界面：左侧是项目模板与执行历史，中间是 SQL 编辑器和执行结果，右侧展示 SQL 从词法、语法、计划、事务、B+Tree 到结果集的执行链路，下方展示真实后端返回的数据表状态和存储记录。该界面把数据库内部执行过程转化为可观察的项目成果，使课程演示和调试过程更加直观。
 
-端到端脚本的关键输出如下，可作为无需截图的可复现实验证据：
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/web-index-state.png}
+\caption{Web 工作台中的二级索引创建与数据表状态展示}
+\label{fig:web-index}
+\end{figure}
+
+图~\ref{fig:web-transaction} 展示事务场景。工作台执行 \code{BEGIN}、\code{INSERT}、\code{UPDATE}、\code{SELECT}、\code{COMMIT} 后，右侧表状态显示 Grace 记录已经提交，执行链路中同时标出事务、B+Tree 和结果集阶段。这个过程体现了前后端边界的处理方式：前端负责展示和交互，状态变化由 HTTP API 调用后端 SQL 执行器完成，再由事务层和存储层共同落到系统状态中。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/web-transaction.png}
+\caption{Web 工作台中的事务提交与记录状态展示}
+\label{fig:web-transaction}
+\end{figure}
+
+\subsection{测试结果与证据}
+
+当前项目包含两层主要测试证据。第一层是 Rust workspace 内的单元测试和集成测试，共 74 项，覆盖共享类型、网络协议、服务端、SQL、存储和事务模块。第二层是 \code{test\_protocol.py} 端到端协议/持久化测试，共 87 项，通过真实 TCP 连接验证 SQL、事务、索引、错误处理和服务重启。两层测试分别覆盖模块内部正确性和系统级可用性，使项目评价同时具备模块级证据和系统级证据。
+
+\begin{table}[H]
+\centering
+\caption{自动化测试结果汇总}
+\begin{tabularx}{\textwidth}{p{3.2cm}X p{1.6cm}}
+\toprule
+测试类别 & 覆盖内容与结果 & 结论\\
+\midrule
+Rust 测试 & 8 个测试目标共 74 项，74 项通过，0 失败。 & 通过\\
+协议测试 & MySQL TCP、DDL/DML、JOIN、事务、错误输入和持久化恢复共 87 项，87 项通过。 & 通过\\
+前端构建 & React/Vite 生产构建成功，可生成可部署静态资源。 & 通过\\
+质量门禁 & 格式检查、Clippy、文档生成和空白差异检查均纳入提交前流程。 & 通过\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+端到端脚本的关键输出如下：
 
 \begin{lstlisting}
 [31] PASS JOIN ... ON table.col = table.col
@@ -236,32 +346,106 @@ Rust 测试的分布为：\code{kv-common} 5 项、\code{kv-network} 10 项、\c
 Total: 87, 87 passed
 \end{lstlisting}
 
+数据库文件检查脚本可展示文件级证据和 Web 操作后的真实状态。例如在 Web 工作台执行建表和插入后，脚本会输出 \code{KVDBPAGE}、页大小、catalog root，并列出当前 \code{users} 表的字段与记录。图~\ref{fig:db-inspection} 是对应终端证据。
+
+\begin{lstlisting}
+KV database file inspection (read-only)
+page size:        4096 bytes
+superblock magic: KVDBPAGE
+catalog root:     1
+
+Web state from kv-server
+table count:      1
+row count:        3
+table:            users
+columns:          id, name, age
+data:
+  id | name | age
+  1 | Ada | 28
+  2 | Grace | 31
+  3 | Linus | 25
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/db-file-inspection.png}
+\caption{数据库文件页信息与 Web 状态检查结果}
+\label{fig:db-inspection}
+\end{figure}
+
+协议测试进一步覆盖错误输入、删表重建和重启持久化等系统级场景。图~\ref{fig:persistence-tests} 显示端到端测试最后阶段：错误处理、DROP TABLE 后重建、数据与元数据跨重启恢复、删表状态跨重启保持均通过，最终结果为 \code{Total: 87, 87 passed}。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/protocol-persistence-tests.png}
+\caption{端到端协议与持久化测试结果}
+\label{fig:persistence-tests}
+\end{figure}
+
+\subsection{运行示例}
+
+启动后端服务：
+
+\begin{lstlisting}[language=bash]
+cargo run -p kv-server
+\end{lstlisting}
+
+默认监听地址为：MySQL Wire Protocol \code{127.0.0.1:3307}，演示 HTTP API \code{127.0.0.1:8080}，数据文件 \code{./kv\_data/kv.db}。使用 MySQL 客户端连接：
+
+\begin{lstlisting}[language=bash]
+mysql -h 127.0.0.1 -P 3307 -u root
+\end{lstlisting}
+
+示例 SQL：
+
+\begin{lstlisting}[language=SQL]
+CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100), age INT);
+INSERT INTO users VALUES (1, 'Ada', 28), (2, 'Grace', 31);
+SELECT id, name FROM users WHERE age > 28 ORDER BY id;
+BEGIN;
+UPDATE users SET age = 32 WHERE id = 2;
+ROLLBACK;
+\end{lstlisting}
+
+启动 Web 工作台：
+
+\begin{lstlisting}[language=bash]
+cd demo-client
+npm ci
+npm run dev
+\end{lstlisting}
+
+访问 \url{http://127.0.0.1:5173} 后即可通过图形界面执行 SQL，并观察 schema、索引、记录和执行耗时。
+
 \subsection{结果分析与局限}
 
-实验表明，项目已完成从协议输入到磁盘持久化的最小闭环，且正常功能和多类边界条件能够稳定返回预期结果。与只运行单元测试相比，87 项端到端测试额外覆盖真实 TCP 连接、服务器重启和文件复用，因此对模块集成与持久化结论提供了更强证据。
+实验结果表明，项目已经形成从 SQL 输入、协议解析、事务执行、B+Tree 存储到磁盘持久化的最小闭环。端到端测试和数据库文件检查脚本分别提供系统级和文件级证据：前者证明系统能够通过真实 TCP 连接执行功能并跨重启恢复，后者证明 Web 操作后的状态可以从后端 API 和数据库文件层面同时观察。由此可以判断，项目成果由后端执行链路、存储格式、Web 工作台和验证脚本共同构成。
 
-但“正常重启后可恢复”不等于“崩溃安全”。项目没有 WAL、checkpoint 和崩溃原子提交；B+Tree 未实现完整删除再平衡；MVCC 版本主要位于内存；锁粒度为表级；MySQL 协议仅覆盖项目 SQL 子集。因此本实验只能得出当前功能范围内正确、可复现的结论，不能宣称达到生产数据库的 ACID、并发度或兼容性。
+同时，项目边界也保持清晰。当前版本的恢复能力以正常关闭和重启后的持久化为主，尚未覆盖 WAL、崩溃原子恢复、完整 B+Tree 删除再平衡、完整 MVCC 版本链、行级锁、死锁检测、用户认证和完整 MySQL 兼容性。因此本实验结论限定为：在课程项目设计范围内，系统功能较完整、测试可复现、边界处理明确；项目定位为教学型数据库系统原型。
 
 \section{开源项目参考说明}
 
-本项目借鉴公开架构思想和数据布局原则，未把上游源码文件复制进仓库。引用均固定到版本或提交，并说明许可证、对应实现和差异。
-
 \subsection{参考来源与引用方式}
+
+本项目在设计阶段查阅了多个成熟开源数据库和教学数据库项目的公开资料，参考对象主要是文件组织、页面布局、B+Tree 结构和缓冲池职责划分。项目实现采用独立代码完成，相关引用在 README、docs 文档和本报告中标明项目名称、固定版本或提交、许可证、官方链接、参考内容以及本项目对应实现文件。主要参考来源见表~\ref{tab:opensource}。
 
 \begin{table}[H]
 \centering
-\caption{开源参考来源}
-\begin{tabularx}{\textwidth}{p{3.2cm}p{4.2cm}X}
+\caption{开源项目参考来源}
+\label{tab:opensource}
+\begin{tabularx}{\textwidth}{p{3.4cm}p{3.6cm}X}
 \toprule
-项目 & 固定版本 & 许可证\\
+参考项目 & 固定版本与许可证 & 借鉴内容与本项目对应实现\\
 \midrule
-SQLite & 3.50.4 & Public Domain\\
-PostgreSQL & REL\_18\_0 & PostgreSQL License\\
-MySQL InnoDB & mysql-8.4.0 & GPLv2\\
-CMU BusTub & \code{f0d9e375...b48508} & MIT\\
+SQLite & 3.50.4，Public Domain & 参考固定页、文件头和 free-list 空闲页管理；本项目在 \code{pager.rs} 中实现更小的 superblock、空闲页单链表和文件校验。\\
+PostgreSQL & REL\_18\_0，PostgreSQL License & 参考 slotted page 页面布局；本项目在 \code{page.rs} 中实现页头、槽目录、tuple 数据区和布局校验。\\
+MySQL InnoDB & mysql-8.4.0，GPLv2 & 参考 B+Tree 索引页与叶节点组织方式；本项目在 \code{btree.rs} 中实现内部节点、叶节点、分裂和叶链扫描。\\
+CMU BusTub & 固定 commit，MIT & 参考教学数据库分层与 BufferPoolManager 职责；本项目在 \code{buffer.rs} 和 \code{Pager} trait 中实现 LRU 缓冲池抽象。\\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+主要公开链接如下：
 
 \begin{enumerate}[label={[\arabic*]},leftmargin=2.5em]
 \item SQLite Database File Format：\url{https://www.sqlite.org/fileformat2.html}
@@ -273,26 +457,38 @@ CMU BusTub & \code{f0d9e375...b48508} & MIT\\
 \item CMU BusTub：\url{https://github.com/cmu-db/bustub/tree/f0d9e3753482d45f2b5919da1873684600b48508}
 \end{enumerate}
 
-SQLite 用于对照固定页、文件头和 free-list；PostgreSQL 用于对照 slotted page 的页头与槽目录；InnoDB 用于对照 B+Tree 索引页字段和叶节点组织；BusTub 用于对照教学数据库的模块边界和 BufferPoolManager 职责。报告引用项目名、固定版本、官方链接和许可证，不使用含糊的“参考某数据库”表述。
-
-\subsection{与原项目的区别、修改和改进}
+\subsection{与参考项目的区别、修改和改进}
 
 \begin{table}[H]
 \centering
 \caption{参考系统与本项目的对比分析}
-\begin{tabularx}{\textwidth}{p{2.1cm}p{4.3cm}X}
+\small
+\begin{tabularx}{\textwidth}{p{2.3cm}p{4.1cm}X}
 \toprule
-维度 & 参考系统 & 本项目的区别与改进\\
+维度 & 参考系统做法 & 本项目区别与改进\\
 \midrule
-文件与空闲页 & SQLite 使用成熟文件头、trunk/leaf freelist、journal/WAL & 使用更小的 superblock 与页内单链表；增加魔数、版本、截断、越界和链表环检查，并用跨重启测试验证复用\\
-数据页 & PostgreSQL 保存 LSN、checksum、special space、MVCC 信息 & 仅保留课程所需页头、槽项和 tuple；增加集中式布局校验，但不实现 WAL 和页内 MVCC 头\\
-索引 & InnoDB 支持聚簇/二级索引、高并发和恢复 & 实现固定阶 B+Tree、叶链扫描和超页拒绝；接口同时承载表、catalog 和二级索引，但不宣称生产级恢复\\
-缓冲池 & BusTub 使用 page guard、pin count、锁和 replacer & 用 Rust \code{Pager} trait、Mutex 和 LRU 隔离缓存职责；释放页时强制失效缓存，并有针对性回归测试\\
-系统入口 & 上游项目主要面向各自完整客户端或教学测试 & 同一执行器同时提供 MySQL 协议和 React 工作台，API 返回真实后端状态与耗时\\
+文件与空闲页 & SQLite 使用成熟文件头、page 1 free-list trunk/leaf 结构，并配合 journal/WAL。 & 本项目使用更小的 superblock 和空闲页单链表，额外加入魔数、版本、截断、页号范围和链表环检测，并用跨重启测试验证页面复用。\\
+数据页 & PostgreSQL slotted page 保存 LSN、checksum、special space、line pointer 等生产级字段。 & 本项目保留教学所需页头、槽项和 tuple 数据区，集中校验槽目录和 tuple 边界；WAL 页头和复杂恢复信息作为后续扩展内容。\\
+索引结构 & InnoDB 支持聚簇索引、二级索引、高并发访问和恢复机制。 & 本项目实现固定阶 B+Tree、叶节点链表扫描和超页拒绝；降低复杂度以突出 B+Tree 原理，并明确不等同于 InnoDB 的生产级索引。\\
+缓冲池 & BusTub 使用 page guard、pin count、锁和 replacer 管理页面生命周期。 & 本项目用 Rust \code{Pager} trait 拆分读写、分配、释放和刷盘职责，用 \code{Mutex} 与 LRU 管理缓存，并增加释放页后缓存失效测试。\\
+入口与观察性 & 成熟数据库主要面向完整客户端生态，BusTub 主要面向课程测试。 & 本项目同时提供 MySQL 协议和 Web 工作台，Web 界面展示真实后端状态、schema、索引数量和执行耗时，更适合课程演示与调试。\\
 \bottomrule
 \end{tabularx}
+\normalsize
 \end{table}
 
-对比可见，本项目没有追求与 SQLite、PostgreSQL 或 InnoDB 的性能和功能对等，而是缩小数据结构后补充严格边界检查、跨重启测试和双入口展示，使各层在课程规模内可运行、可观察、可验证。相应代价是缺少 WAL、复杂并发控制、完整索引维护和崩溃恢复，这些差异已在实验结论中明确限定。
+\subsection{参考后的项目特色}
+
+通过对比可以看出，本项目主要吸收数据结构、模块边界和工程经验，并结合课程目标形成了以下特点：
+
+\begin{enumerate}[label=\arabic*.]
+\item \textbf{Rust 原生实现。}利用所有权、trait、\code{Result} 和线程安全类型构建内存安全的数据库内核。
+\item \textbf{链路完整。}从 SQL 词法解析到磁盘页面持久化均有自研实现，能够展示数据库内部关键环节。
+\item \textbf{边界检查充分。}对文件格式、页面边界、协议分片、HTTP 请求大小、缓存失效和重启恢复均有测试覆盖，体现了对异常输入和演示复现的考虑。
+\item \textbf{双入口可观察。}MySQL 协议适合标准客户端验证，Web 工作台适合课堂展示，脚本还能读取数据库页信息和 Web 当前状态。
+\item \textbf{范围明确。}报告说明 WAL、完整崩溃恢复、行级锁和完整 MySQL 兼容性属于后续扩展方向，项目定位保持在教学型数据库系统原型。
+\end{enumerate}
+
+因此，本项目在课程范围内完成了可运行、可测试、可解释的数据库系统原型。相对于参考项目，它的价值不在于功能规模，而在于把数据库核心机制压缩到一个可以学习、复现和演示的工程闭环中，并通过测试、脚本和界面展示证明实现结果。
 
 \end{document}

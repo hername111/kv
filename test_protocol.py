@@ -4,9 +4,13 @@ KV 数据库全功能测试脚本
 测试所有用户可见的 SQL 功能：DDL / DML / 查询 / 事务 / 索引 / 持久化
 
 用法：
-    python test_protocol.py [--no-persistence]
+    python test_protocol.py [--port 3307] [--http-port 18080]
+    python test_protocol.py --no-persistence [--port 3307]
 
-    --no-persistence  跳过需要启停服务进程的磁盘持久化测试
+    默认完整模式会自动选择临时本地端口并自行启停测试服务。
+    --no-persistence  跳过需要启停服务进程的磁盘持久化测试，直连已有服务
+    --port            指定 MySQL 协议端口；完整模式不指定时自动选择
+    --http-port       指定演示 HTTP API 端口；完整模式不指定时自动选择
 """
 
 import socket
@@ -17,6 +21,12 @@ import time
 import os
 import shutil
 from pathlib import Path
+
+def find_free_port():
+    """Return an available localhost TCP port for an isolated test server."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 # ============================================================================
 # MySQL 协议工具函数
@@ -265,9 +275,10 @@ def summary():
 class ServerProcess:
     """管理 KV 服务器的启停。"""
 
-    def __init__(self, data_dir="target/kv-test-data", port=3307):
+    def __init__(self, data_dir="target/kv-test-data", port=None, http_port=None):
         self.data_dir = data_dir
-        self.port = port
+        self.port = port if port is not None else find_free_port()
+        self.http_port = http_port if http_port is not None else find_free_port()
         self.process = None
         self.binary = None
 
@@ -310,7 +321,7 @@ class ServerProcess:
                 **os.environ,
                 "KV_DATA_DIR": self.data_dir,
                 "KV_ADDR": f"127.0.0.1:{self.port}",
-                "KV_DEMO_ADDR": "127.0.0.1:18080",
+                "KV_DEMO_ADDR": f"127.0.0.1:{self.http_port}",
             },
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -354,7 +365,7 @@ class ServerProcess:
                 **os.environ,
                 "KV_DATA_DIR": self.data_dir,
                 "KV_ADDR": f"127.0.0.1:{self.port}",
-                "KV_DEMO_ADDR": "127.0.0.1:18080",
+                "KV_DEMO_ADDR": f"127.0.0.1:{self.http_port}",
             },
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -730,7 +741,7 @@ def test_persistence(server):
     """磁盘持久化测试：验证 B+Tree 数据 + 表元数据跨重启存活。"""
     section("Disk Persistence: Data + Metadata survives restart")
 
-    client = KVClient(port=3307)
+    client = KVClient(port=server.port)
     try:
         client.connect()
 
@@ -751,7 +762,7 @@ def test_persistence(server):
             return
 
         # 重新连接 - 元数据已持久化，无需重建表
-        client2 = KVClient(port=3307)
+        client2 = KVClient(port=server.port)
         client2.connect()
 
         result = client2.execute("SELECT * FROM persist_test")
@@ -770,7 +781,7 @@ def test_persistence(server):
             test("Server re-restart", False, "restart failed")
             return
 
-        client3 = KVClient(port=3307)
+        client3 = KVClient(port=server.port)
         client3.connect()
 
         result = client3.execute("SELECT * FROM persist_test")
@@ -791,7 +802,7 @@ def test_persistence(server):
 # 主入口
 # ============================================================================
 
-def run_tests(skip_persistence=False):
+def run_tests(skip_persistence=False, port=None, http_port=None):
     """运行所有测试。"""
     print("=" * 60)
     print("  KV Database - Full Feature Test Suite")
@@ -801,11 +812,12 @@ def run_tests(skip_persistence=False):
 
     if skip_persistence:
         # 直连模式：假定服务器已在运行
-        client = KVClient(port=3307)
+        connect_port = port if port is not None else 3307
+        client = KVClient(port=connect_port)
         try:
             client.connect()
         except Exception as e:
-            print(f"\nCannot connect to 127.0.0.1:3307: {e}")
+            print(f"\nCannot connect to 127.0.0.1:{connect_port}: {e}")
             print("Start the server first: cargo run --bin kv-server")
             return False
 
@@ -829,14 +841,16 @@ def run_tests(skip_persistence=False):
     else:
         # 完整模式：自行管理服务器生命周期
         global PASS, FAIL, TEST_INDEX
-        server = ServerProcess(port=3307)
+        server = ServerProcess(port=port, http_port=http_port)
+        print(f"  Test MySQL port: {server.port}")
+        print(f"  Test HTTP port:  {server.http_port}")
 
         if not server.start():
             print("Server failed to start")
             return False
 
         try:
-            client = KVClient(port=3307)
+            client = KVClient(port=server.port)
             if not test_connection(client):
                 return False
 
@@ -867,5 +881,21 @@ def run_tests(skip_persistence=False):
 
 if __name__ == '__main__':
     skip_persistence = '--no-persistence' in sys.argv
-    success = run_tests(skip_persistence=skip_persistence)
+
+    def read_int_arg(name):
+        if name not in sys.argv:
+            return None
+        idx = sys.argv.index(name)
+        if idx + 1 >= len(sys.argv):
+            print(f"Missing value for {name}")
+            sys.exit(2)
+        try:
+            return int(sys.argv[idx + 1])
+        except ValueError:
+            print(f"Invalid integer for {name}: {sys.argv[idx + 1]}")
+            sys.exit(2)
+
+    port = read_int_arg('--port')
+    http_port = read_int_arg('--http-port')
+    success = run_tests(skip_persistence=skip_persistence, port=port, http_port=http_port)
     sys.exit(0 if success else 1)
