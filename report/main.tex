@@ -113,6 +113,28 @@ Web 工作台 & 提供 SQL 编辑、执行链路、执行结果、表结构、�
 \item \textbf{可复现实验验证。}通过单元测试、端到端协议测试、前端构建和数据库文件检查脚本，验证正常功能、边界输入、重启持久化和演示数据真实性。
 \end{enumerate}
 
+\subsection{项目亮点与实现证据}
+
+本项目的亮点不在于追求生产数据库的完整功能，而在于把数据库系统中的关键概念落实到一个可运行、可检查、可复现的工程系统中。表~\ref{tab:highlights}概括了项目中最能体现工作量和设计思考的部分。
+
+\begin{table}[H]
+\centering
+\caption{项目亮点与实现证据}
+\label{tab:highlights}
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}X X}
+\toprule
+亮点 & 具体体现 & 证据位置\\
+\midrule
+端到端链路完整 & 一条 SQL 会经过词法分析、语法解析、逻辑计划、执行器、事务管理和存储引擎，最终落到 B+Tree 和磁盘页。 & \code{kv-sql}、\code{kv-txn}、\code{kv-storage}，以及端到端协议测试。\\
+存储实现可解释 & 实现 superblock、空闲页链表、slotted page、B+Tree、catalog 和 LRU 缓冲池，并对损坏页、越界槽目录和空闲页环进行检查。 & \code{pager.rs}、\code{page.rs}、\code{btree.rs}、\code{buffer.rs}。\\
+事务语义可观察 & 支持显式事务、提交/回滚、读己之写、写缓冲和表级锁，Web 工作台可以观察事务前后数据状态变化。 & \code{executor.rs}、\code{manager.rs}、\code{lock.rs}、Web 事务截图。\\
+交付闭环完整 & 同时提供 MySQL TCP 入口、HTTP API、React 工作台、PowerShell 检查脚本、自动化测试和 LaTeX 报告，便于评审复现。 & README、docs、\code{scripts/}、测试输出截图。\\
+\bottomrule
+\end{tabularx}
+\normalsize
+\end{table}
+
 \subsection{预期功能与完成范围}
 
 \begin{table}[H]
@@ -427,22 +449,24 @@ npm run dev
 
 \subsection{参考来源与引用方式}
 
-本项目在设计阶段查阅了多个成熟开源数据库和教学数据库项目的公开资料，参考对象主要是文件组织、页面布局、B+Tree 结构和缓冲池职责划分。项目实现采用独立代码完成，相关引用在 README、docs 文档和本报告中标明项目名称、固定版本或提交、许可证、官方链接、参考内容以及本项目对应实现文件。主要参考来源见表~\ref{tab:opensource}。
+本项目在设计阶段查阅了多个成熟开源数据库和教学数据库项目的公开资料。参考重点不是复制具体源码，而是理解数据库系统中已经被反复验证的设计边界：数据库文件如何标识和管理空闲页，数据页如何组织变长记录，B+Tree 如何支持索引和范围访问，缓冲池如何隔离上层逻辑与页面读写。项目代码采用独立实现，引用材料在 README、docs 文档和本报告中列出，并标明参考对象、许可证、参考内容以及本项目对应实现文件。主要参考来源见表~\ref{tab:opensource}，对应实现主要位于 \code{pager.rs}、\code{page.rs}、\code{btree.rs}、\code{buffer.rs} 和 \code{traits.rs}。
 
 \begin{table}[H]
 \centering
 \caption{开源项目参考来源}
 \label{tab:opensource}
-\begin{tabularx}{\textwidth}{p{3.4cm}p{3.6cm}X}
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}p{3.1cm}X}
 \toprule
-参考项目 & 固定版本与许可证 & 借鉴内容与本项目对应实现\\
+参考项目 & 版本/许可证 & 参考重点\\
 \midrule
-SQLite & 3.50.4，Public Domain & 参考固定页、文件头和 free-list 空闲页管理；本项目在 \code{pager.rs} 中实现更小的 superblock、空闲页单链表和文件校验。\\
-PostgreSQL & REL\_18\_0，PostgreSQL License & 参考 slotted page 页面布局；本项目在 \code{page.rs} 中实现页头、槽目录、tuple 数据区和布局校验。\\
-MySQL InnoDB & mysql-8.4.0，GPLv2 & 参考 B+Tree 索引页与叶节点组织方式；本项目在 \code{btree.rs} 中实现内部节点、叶节点、分裂和叶链扫描。\\
-CMU BusTub & 固定 commit，MIT & 参考教学数据库分层与 BufferPoolManager 职责；本项目在 \code{buffer.rs} 和 \code{Pager} trait 中实现 LRU 缓冲池抽象。\\
+SQLite & 3.50.4 源码标签；Public Domain & 参考数据库文件格式、固定大小页面、文件头信息和 free-list 管理思想。\\
+PostgreSQL & REL\_18\_0 源码标签；PostgreSQL License & 参考 slotted page 的页头、line pointer/槽目录和 tuple 数据区分离思想。\\
+MySQL InnoDB & mysql-8.4.0 源码标签；GPLv2 & 参考 InnoDB 以 B+Tree 组织聚簇索引和二级索引的总体结构，以及叶子层有序访问的设计思想。\\
+CMU BusTub & f0d9e375 提交；MIT & 参考教学数据库的模块拆分、BufferPoolManager 职责和面向测试的工程组织。\\
 \bottomrule
 \end{tabularx}
+\normalsize
 \end{table}
 
 主要公开链接如下：
@@ -459,19 +483,22 @@ CMU BusTub & 固定 commit，MIT & 参考教学数据库分层与 BufferPoolMana
 
 \subsection{与参考项目的区别、修改和改进}
 
+本项目对开源项目的借鉴主要体现在结构和机制层面，而不是功能规模层面的横向竞争。SQLite、PostgreSQL 和 InnoDB 都是生产级数据库系统，覆盖 WAL、恢复、并发控制、查询优化、权限和生态兼容等大量能力；BusTub 则是面向数据库课程的教学系统。KV Database 的定位介于“课程实现”和“完整工程交付”之间：保留数据库内核中最关键、最可解释的路径，同时把协议入口、Web 可观察性和复现实验脚本纳入交付范围。具体差异见表~\ref{tab:opensource-compare}。
+
 \begin{table}[H]
 \centering
 \caption{参考系统与本项目的对比分析}
+\label{tab:opensource-compare}
 \small
-\begin{tabularx}{\textwidth}{p{2.3cm}p{4.1cm}X}
+\begin{tabularx}{\textwidth}{p{2.3cm}p{4.25cm}X}
 \toprule
-维度 & 参考系统做法 & 本项目区别与改进\\
+维度 & 参考系统做法 & 本项目取舍与对应实现\\
 \midrule
-文件与空闲页 & SQLite 使用成熟文件头、page 1 free-list trunk/leaf 结构，并配合 journal/WAL。 & 本项目使用更小的 superblock 和空闲页单链表，额外加入魔数、版本、截断、页号范围和链表环检测，并用跨重启测试验证页面复用。\\
-数据页 & PostgreSQL slotted page 保存 LSN、checksum、special space、line pointer 等生产级字段。 & 本项目保留教学所需页头、槽项和 tuple 数据区，集中校验槽目录和 tuple 边界；WAL 页头和复杂恢复信息作为后续扩展内容。\\
-索引结构 & InnoDB 支持聚簇索引、二级索引、高并发访问和恢复机制。 & 本项目实现固定阶 B+Tree、叶节点链表扫描和超页拒绝；降低复杂度以突出 B+Tree 原理，并明确不等同于 InnoDB 的生产级索引。\\
-缓冲池 & BusTub 使用 page guard、pin count、锁和 replacer 管理页面生命周期。 & 本项目用 Rust \code{Pager} trait 拆分读写、分配、释放和刷盘职责，用 \code{Mutex} 与 LRU 管理缓存，并增加释放页后缓存失效测试。\\
-入口与观察性 & 成熟数据库主要面向完整客户端生态，BusTub 主要面向课程测试。 & 本项目同时提供 MySQL 协议和 Web 工作台，Web 界面展示真实后端状态、schema、索引数量和执行耗时，更适合课程演示与调试。\\
+文件与空闲页 & SQLite 文件格式以固定页面为基础，维护数据库头部信息，并使用 free-list trunk/leaf 管理空闲页；生产环境还配合 journal 或 WAL 保证恢复语义。 & 本项目实现独立 superblock，保存魔数、格式版本、下一页号、空闲链表头和 catalog 根页。空闲页用页内前 8 字节串成单链表，便于课程规模下说明页号复用；同时增加截断文件、非法页号和 free-list 环检测。\\
+数据页 & PostgreSQL 页面布局使用页头、item identifier/line pointer、tuple 数据区和 special space，并为 WAL、校验、剪枝等机制保留字段。 & 本项目实现精简 slotted page：页头记录页号、槽数量和空闲区边界，槽目录向后增长，tuple 数据从页尾向前增长。实现重点放在变长记录组织和损坏页面校验，而不是复制 PostgreSQL 的 WAL 与 vacuum 相关字段。\\
+索引结构 & InnoDB 以 B+Tree 组织聚簇索引和二级索引，索引页还涉及页目录、记录头、页分裂、并发访问、redo/undo 恢复等生产级机制。 & 本项目实现固定阶 B+Tree，包含内部节点、叶节点、节点分裂、根节点更新和叶子链范围扫描。为了保证实现可读和测试稳定，暂不实现复杂删除再平衡、页压缩和崩溃恢复。\\
+缓冲池 & BusTub 将磁盘管理、BufferPoolManager、页面保护和替换策略分层，适合教学环境中逐步实现并测试。 & 本项目将页面接口抽象为 \code{Pager} trait，并在其外层实现写穿式 LRU 缓存。释放页时主动失效缓存，避免页号复用后读到旧页内容；该行为有专门测试覆盖。\\
+工程入口 & SQLite、PostgreSQL、InnoDB 更关注成熟客户端生态和生产功能；BusTub 更关注课程实验框架与单元测试。 & 本项目把内核实现、MySQL Wire Protocol、HTTP API、React 工作台、PowerShell 脚本和报告文档放在同一交付闭环中。评审者既可以用标准客户端执行 SQL，也可以通过 Web 和脚本观察后端真实状态。\\
 \bottomrule
 \end{tabularx}
 \normalsize
@@ -479,16 +506,16 @@ CMU BusTub & 固定 commit，MIT & 参考教学数据库分层与 BufferPoolMana
 
 \subsection{参考后的项目特色}
 
-通过对比可以看出，本项目主要吸收数据结构、模块边界和工程经验，并结合课程目标形成了以下特点：
+通过对比可以看出，本项目主要吸收公开系统中的数据结构、模块边界和工程经验，并结合课程目标形成了以下特色：
 
 \begin{enumerate}[label=\arabic*.]
-\item \textbf{Rust 原生实现。}利用所有权、trait、\code{Result} 和线程安全类型构建内存安全的数据库内核。
-\item \textbf{链路完整。}从 SQL 词法解析到磁盘页面持久化均有自研实现，能够展示数据库内部关键环节。
-\item \textbf{边界检查充分。}对文件格式、页面边界、协议分片、HTTP 请求大小、缓存失效和重启恢复均有测试覆盖，体现了对异常输入和演示复现的考虑。
-\item \textbf{双入口可观察。}MySQL 协议适合标准客户端验证，Web 工作台适合课堂展示，脚本还能读取数据库页信息和 Web 当前状态。
-\item \textbf{范围明确。}报告说明 WAL、完整崩溃恢复、行级锁和完整 MySQL 兼容性属于后续扩展方向，项目定位保持在教学型数据库系统原型。
+\item \textbf{独立实现而非封装现成数据库。}项目没有调用 SQLite、PostgreSQL 或 MySQL 作为底层引擎，SQL 执行、事务缓冲、B+Tree、页面文件和协议结果编码均由项目代码完成。
+\item \textbf{核心机制压缩到可解释规模。}项目保留数据库系统最重要的路径：SQL 到逻辑计划、事务状态、主键编码、B+Tree 查找/扫描、页面分配和磁盘持久化，使报告和代码能够对应解释。
+\item \textbf{边界检查体现工程意识。}文件格式魔数、版本号、页号范围、free-list 环、槽目录越界、B+Tree 页面截断、TCP 分片、HTTP 请求大小和缓存失效均有处理或测试，不只验证正常输入。
+\item \textbf{观察方式服务课程评审。}MySQL 协议用于标准客户端验证，Web 工作台用于展示 schema、记录和耗时，数据库检查脚本用于读取文件级信息，三者共同证明数据来自真实后端。
+\item \textbf{边界说明清楚。}报告明确说明 WAL、崩溃原子恢复、完整删除再平衡、持久化 MVCC 版本链、行级锁、死锁检测和完整 MySQL 兼容性尚未实现，避免把教学原型描述成生产数据库。
 \end{enumerate}
 
-因此，本项目在课程范围内完成了可运行、可测试、可解释的数据库系统原型。相对于参考项目，它的价值不在于功能规模，而在于把数据库核心机制压缩到一个可以学习、复现和演示的工程闭环中，并通过测试、脚本和界面展示证明实现结果。
+因此，本项目相对于参考项目的价值不在于功能规模，而在于把数据库系统的关键机制压缩成一个能够运行、测试、观察和解释的工程闭环。它既能体现对成熟数据库设计的理解，也能通过独立代码、测试结果和界面展示证明课程范围内的实现质量。
 
 \end{document}
