@@ -5,6 +5,7 @@ use std::io::{Error, ErrorKind};
 // 每个值以一字节标签开头：Null=0，Int=1，Float=2，String=3，Bool=4。
 // 定长数值使用小端序；字符串标签后依次保存 u32 长度和 UTF-8 字节。
 
+/// 将一行按列顺序编码为连续字节。
 pub fn serialize_row(row: &Row) -> Vec<u8> {
     let mut buf = Vec::new();
     for val in &row.values {
@@ -13,6 +14,7 @@ pub fn serialize_row(row: &Row) -> Vec<u8> {
     buf
 }
 
+/// 编码单个 SQL 值，主要用于构造二级索引键。
 pub fn serialize_value(val: &Value) -> Vec<u8> {
     let mut buf = Vec::new();
     serialize_value_into(val, &mut buf);
@@ -43,6 +45,7 @@ fn serialize_value_into(val: &Value, buf: &mut Vec<u8>) {
     }
 }
 
+/// 从连续字节恢复一行。
 pub fn deserialize_row(mut data: &[u8]) -> Result<Row, Error> {
     let mut values = Vec::new();
     while !data.is_empty() {

@@ -1,15 +1,23 @@
-//! 4 KiB 槽页：页头和槽目录向后增长，元组数据从页尾向前增长。
+//! 4 KiB 槽页。
+//!
+//! 页面由页头、槽目录和元组数据三部分组成：页头固定放在开头，槽目录向后增长，
+//! 变长元组从页尾向前写入。只要两端没有重叠，槽号就可以稳定地指向对应记录。
 use std::io::{self, Error, ErrorKind};
 
 pub const PAGE_SIZE: usize = 4096;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
 /// 槽页头；偏移均相对于页面起始位置。
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PageHeader {
+    /// 页号，由 pager 分配。
     pub page_id: u64,
+    /// 已写入槽的数量。
     pub tuple_count: u16,
+    /// 槽目录起始位置。当前页头长度固定，因此新页中该值为 [`PageHeader::SIZE`]。
     pub free_start: u16,
+    /// 元组数据区的起始位置。
     pub free_end: u16,
+    /// 预留标志位，便于后续标记页类型或压缩状态。
     pub flags: u8,
 }
 
@@ -72,8 +80,8 @@ impl SlotEntry {
     }
 }
 
-#[derive(Debug, Clone)]
 /// 保存变长记录的固定大小页面。
+#[derive(Debug, Clone)]
 pub struct SlottedPage {
     data: [u8; PAGE_SIZE],
 }
@@ -121,6 +129,7 @@ impl SlottedPage {
         PageHeader::decode(&self.data[..PageHeader::SIZE])
     }
 
+    /// 返回完整页面字节，用于写回 pager。
     pub fn as_bytes(&self) -> &[u8; PAGE_SIZE] {
         &self.data
     }
@@ -168,6 +177,7 @@ impl SlottedPage {
         Ok(h.tuple_count - 1)
     }
 
+    /// 读取指定槽中的记录。
     pub fn get(&self, slot_idx: u16) -> io::Result<&[u8]> {
         let h = self.header();
         if slot_idx >= h.tuple_count {
@@ -191,6 +201,7 @@ impl SlottedPage {
             .ok_or_else(|| Error::new(ErrorKind::InvalidData, "tuple outside page"))
     }
 
+    /// 按槽号顺序遍历页面内记录。
     pub fn iter_tuples(&self) -> SlotIter<'_> {
         SlotIter {
             page: self,
@@ -222,6 +233,7 @@ impl SlottedPage {
                 "slot directory overlaps tuple data",
             ));
         }
+        // 只接受指向元组数据区的槽。这样即使数据库文件损坏，也不会返回越界切片。
         for slot_index in 0..header.tuple_count as usize {
             let offset = free_start + slot_index * SlotEntry::SIZE;
             let slot = SlotEntry::decode(&self.data[offset..offset + SlotEntry::SIZE]);
@@ -240,6 +252,7 @@ impl SlottedPage {
     }
 }
 
+/// 槽页记录迭代器。
 pub struct SlotIter<'a> {
     page: &'a SlottedPage,
     current: u16,

@@ -11,6 +11,7 @@ pub struct BufferPool {
 }
 
 impl BufferPool {
+    /// 创建缓存池。容量小于 1 时自动提升为 1。
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity: capacity.max(1),
@@ -19,6 +20,7 @@ impl BufferPool {
         }
     }
 
+    /// 读取缓存页；命中后将页号移动到 LRU 队尾。
     pub fn get(&self, page_id: u64) -> Option<Vec<u8>> {
         let map = self.map.lock().unwrap();
         let result = map.get(&page_id).cloned();
@@ -30,6 +32,7 @@ impl BufferPool {
         result
     }
 
+    /// 写入缓存页，并在容量不足时淘汰最久未使用页。
     pub fn put(&self, page_id: u64, data: Vec<u8>) {
         let mut map = self.map.lock().unwrap();
         let mut lru = self.lru.lock().unwrap();
@@ -46,6 +49,7 @@ impl BufferPool {
         map.insert(page_id, data);
     }
 
+    /// 从缓存中移除指定页。
     pub fn remove(&self, page_id: u64) {
         self.map.lock().unwrap().remove(&page_id);
         self.lru.lock().unwrap().retain(|&id| id != page_id);
@@ -61,6 +65,7 @@ pub struct BufferedPager {
 }
 
 impl BufferedPager {
+    /// 包装底层 pager 和共享缓存池。
     pub fn new(inner: Arc<dyn Pager>, pool: Arc<BufferPool>) -> Self {
         Self { inner, pool }
     }

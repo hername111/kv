@@ -1,6 +1,9 @@
 //! SQL 子集的词法分析器。
 use kv_common::error::{KvError, KvResult};
 
+/// SQL 词法单元。
+///
+/// 关键字统一在词法阶段转为专用 token，普通标识符保留原始文本，便于后续做大小写不敏感匹配。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Select,
@@ -50,6 +53,7 @@ pub enum Token {
     Unknown(String),
 }
 
+/// 面向课程 SQL 子集的词法分析器。
 pub struct Lexer<'a> {
     chars: Vec<char>,
     pos: usize,
@@ -172,7 +176,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// 扫描完整输入并在末尾附加 `Eof`。
+    /// 将输入 SQL 转换为 token 序列。
     pub fn tokenize(&mut self) -> KvResult<Vec<Token>> {
         let mut tokens = Vec::new();
         while self.pos < self.chars.len() {

@@ -1,8 +1,10 @@
 //! 数据库各层共享的错误类型。
 use crate::types::DataType;
 
+/// 项目内部统一使用的结果类型。
 pub type KvResult<T> = Result<T, KvError>;
 
+/// 数据库各层共享的错误枚举。
 #[derive(Debug, thiserror::Error)]
 pub enum KvError {
     #[error("IO error: {0}")]

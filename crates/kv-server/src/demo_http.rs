@@ -16,6 +16,9 @@ struct QueryRequest {
     sql: String,
 }
 
+/// 启动本地 HTTP 工作台接口。
+///
+/// 该接口只面向演示和调试，默认绑定本机地址，不承担生产环境网关职责。
 pub async fn start_demo_http(addr: String, executor: Arc<SqlExecutor>) -> std::io::Result<()> {
     let listener = TcpListener::bind(&addr).await?;
     let session = Arc::new(Session::new());

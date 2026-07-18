@@ -100,6 +100,7 @@ impl KvStorage {
         Ok(())
     }
 
+    /// 将表目录写入元数据 B+Tree。
     pub async fn save_table_meta(&self, name: &str, meta: &TableMeta) -> KvResult<()> {
         let tree = self.get_or_init_meta_tree().await?;
         let key = format!("table:{}", name).into_bytes();
@@ -109,6 +110,7 @@ impl KvStorage {
         Ok(())
     }
 
+    /// 读取全部表目录，并同步推进后续表 ID 与索引 ID。
     pub async fn load_all_table_meta(&self) -> KvResult<Vec<TableMeta>> {
         let tree = self.get_or_init_meta_tree().await?;
         let entries = tree.scan(b"table:", b"table;").await?;
@@ -118,6 +120,7 @@ impl KvStorage {
                 .map_err(|e| kv_common::error::KvError::Internal(e.to_string()))?;
             metas.push(meta);
         }
+        // 恢复后继续使用单调递增 ID，避免新建对象覆盖旧目录项。
         let max_tid = metas.iter().map(|m| m.table_id).max().unwrap_or(0);
         let max_iid = metas
             .iter()
@@ -129,6 +132,7 @@ impl KvStorage {
         Ok(metas)
     }
 
+    /// 从目录树删除表元数据。
     pub async fn delete_table_meta(&self, name: &str) -> KvResult<()> {
         let tree = self.get_or_init_meta_tree().await?;
         let key = format!("table:{}", name).into_bytes();

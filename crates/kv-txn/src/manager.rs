@@ -1,8 +1,8 @@
 //! 事务状态机和读写集合。
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// 事务只能从 `Active` 转移到一个终态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TxnState {
     Active,
     Committed,
@@ -22,6 +22,7 @@ pub struct TxnManager {
     transactions: HashMap<u64, Transaction>,
 }
 
+/// 事务状态机错误。
 #[derive(Debug)]
 pub enum TxnError {
     NotFound(u64),
@@ -48,6 +49,7 @@ impl Default for TxnManager {
 }
 
 impl TxnManager {
+    /// 创建空事务管理器。
     pub fn new() -> Self {
         Self {
             counter: 0,
@@ -95,7 +97,7 @@ impl TxnManager {
         }
     }
 
-    /// 标记读集合
+    /// 将行加入事务读集合。
     pub fn add_read(&mut self, txn_id: u64, table: &str, row_id: &str) -> Result<(), TxnError> {
         match self.transactions.get_mut(&txn_id) {
             Some(txn) if txn.state == TxnState::Active => {
@@ -110,7 +112,7 @@ impl TxnManager {
         }
     }
 
-    /// 标记写集合
+    /// 将行加入事务写集合。
     pub fn add_write(&mut self, txn_id: u64, table: &str, row_id: &str) -> Result<(), TxnError> {
         match self.transactions.get_mut(&txn_id) {
             Some(txn) if txn.state == TxnState::Active => {

@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
 /// 表锁模式。
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LockMode {
     Shared,
     Exclusive,
@@ -25,6 +25,7 @@ pub struct LockManager {
 }
 
 impl LockManager {
+    /// 创建表级锁管理器。`timeout_ms` 用于清理异常会话遗留的锁。
     pub fn new(timeout_ms: u64) -> Self {
         LockManager {
             locks: Mutex::new(HashMap::new()),
@@ -32,6 +33,7 @@ impl LockManager {
         }
     }
 
+    /// 尝试获取共享锁。多个事务可同时持有同一表的共享锁。
     pub fn try_lock_shared(&self, txn_id: u64, table: &str) -> Result<(), String> {
         let mut locks = self.locks.lock().unwrap();
         self.remove_expired(&mut locks);
@@ -54,6 +56,7 @@ impl LockManager {
         Ok(())
     }
 
+    /// 尝试获取排他锁。同一事务可将已有锁升级为排他锁。
     pub fn try_lock_exclusive(&self, txn_id: u64, table: &str) -> Result<(), String> {
         let mut locks = self.locks.lock().unwrap();
         self.remove_expired(&mut locks);
@@ -72,6 +75,7 @@ impl LockManager {
         Ok(())
     }
 
+    /// 释放指定事务持有的全部锁。
     pub fn unlock_all(&self, txn_id: u64) {
         let mut locks = self.locks.lock().unwrap();
         for entries in locks.values_mut() {
@@ -80,6 +84,7 @@ impl LockManager {
         locks.retain(|_, v| !v.is_empty());
     }
 
+    /// 查询事务是否持有某张表上的锁。
     pub fn has_lock(&self, txn_id: u64, table: &str) -> bool {
         let locks = self.locks.lock().unwrap();
         locks
@@ -89,6 +94,7 @@ impl LockManager {
 
     fn remove_expired(&self, locks: &mut HashMap<String, Vec<LockEntry>>) {
         let now = Instant::now();
+        // 锁超时采用惰性清理，避免为课程项目引入后台清理线程。
         locks.values_mut().for_each(|entries| {
             entries.retain(|entry| now.duration_since(entry.acquired_at) <= self.timeout)
         });

@@ -5,13 +5,16 @@ use crate::lexer::Token;
 use kv_common::error::{KvError, KvResult};
 use kv_common::types::{ColumnDef, DataType};
 
-/// 每次解析一条 SQL 语句的递归下降解析器。
+/// 递归下降解析器。
+///
+/// 解析器按固定 SQL 子集实现，遇到不支持的语法会返回带位置的解析错误。
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
 }
 
 impl Parser {
+    /// 使用词法分析结果创建解析器。
     pub fn new(tokens: Vec<Token>) -> Self {
         Parser { tokens, pos: 0 }
     }
@@ -72,6 +75,7 @@ impl Parser {
         }
     }
 
+    /// 解析单条 SQL 语句。
     pub fn parse_statement(&mut self) -> KvResult<Statement> {
         match self.peek() {
             Some(Token::Select) => self.parse_select(),

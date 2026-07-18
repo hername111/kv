@@ -4,6 +4,9 @@ use crate::ast::*;
 use kv_common::error::KvResult;
 use kv_common::types::ColumnDef;
 
+/// 可执行的逻辑计划节点。
+///
+/// 计划树保持递归结构：扫描、过滤、排序、连接和投影可以按节点组合执行。
 #[derive(Debug, Clone)]
 pub enum PlanNode {
     SeqScan {
@@ -69,6 +72,7 @@ pub enum PlanNode {
 pub struct Planner;
 
 impl Planner {
+    /// 将 AST 转换为逻辑计划。
     pub fn plan(stmt: Statement) -> KvResult<PlanNode> {
         match stmt {
             Statement::Select {

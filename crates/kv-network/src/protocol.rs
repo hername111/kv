@@ -39,6 +39,7 @@ pub fn write_packet(payload: &[u8], seq_id: u8) -> Vec<u8> {
     packet
 }
 
+/// 构造 MySQL 初始握手包。
 pub fn make_handshake() -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(PROTOCOL_VERSION);
@@ -61,6 +62,7 @@ pub fn make_handshake() -> Vec<u8> {
     write_packet(&payload, 0)
 }
 
+/// 构造 OK 包。
 pub fn make_ok_packet(affected_rows: u64, last_insert_id: u64, seq_id: u8) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(0x00);
@@ -72,6 +74,7 @@ pub fn make_ok_packet(affected_rows: u64, last_insert_id: u64, seq_id: u8) -> Ve
     write_packet(&payload, seq_id)
 }
 
+/// 构造错误包。
 pub fn make_err_packet(code: u16, message: &str, seq_id: u8) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(0xff);
@@ -82,6 +85,7 @@ pub fn make_err_packet(code: u16, message: &str, seq_id: u8) -> Vec<u8> {
     write_packet(&payload, seq_id)
 }
 
+/// 构造文本协议结果集中的列定义包。
 pub fn make_column_def(name: &str, seq_id: u8) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(4);
@@ -102,6 +106,7 @@ pub fn make_column_def(name: &str, seq_id: u8) -> Vec<u8> {
     write_packet(&payload, seq_id)
 }
 
+/// 构造 EOF 包。
 pub fn make_eof_packet(seq_id: u8) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(0xfe);
@@ -110,6 +115,7 @@ pub fn make_eof_packet(seq_id: u8) -> Vec<u8> {
     write_packet(&payload, seq_id)
 }
 
+/// 构造文本协议结果集中的一行。
 pub fn make_text_row(values: &[String], seq_id: u8) -> Vec<u8> {
     let mut payload = Vec::new();
     for v in values {
@@ -119,6 +125,7 @@ pub fn make_text_row(values: &[String], seq_id: u8) -> Vec<u8> {
     write_packet(&payload, seq_id)
 }
 
+/// 将列名和字符串行编码为 MySQL 文本协议结果集。
 pub fn build_result_set(columns: &[String], rows: &[Vec<String>]) -> Vec<u8> {
     let mut seq = 1u8;
     let mut packets = Vec::new();
@@ -139,6 +146,7 @@ pub fn build_result_set(columns: &[String], rows: &[Vec<String>]) -> Vec<u8> {
     packets
 }
 
+/// 将执行器结果转换为 MySQL 文本协议包序列。
 pub fn result_set_to_packets(rs: &kv_common::types::ResultSet) -> Vec<u8> {
     let columns: Vec<String> = rs.columns.iter().map(|c| c.name.clone()).collect();
     let str_rows: Vec<Vec<String>> = rs

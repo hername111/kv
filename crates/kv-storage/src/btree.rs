@@ -1,4 +1,7 @@
 //! 基于 [`Pager`] 的固定阶持久化 B+Tree。
+//!
+//! 节点直接编码到固定大小页面：内部节点保存分隔键和子页号，叶子节点保存键值对并通过
+//! `next` 指针串联。课程项目采用较小阶数，便于测试中稳定触发分裂和根节点变化。
 use crate::page::PAGE_SIZE;
 use kv_common::error::{KvError, KvResult};
 use kv_common::traits::Pager;
@@ -27,6 +30,9 @@ fn finish_page(mut buffer: Vec<u8>) -> KvResult<Vec<u8>> {
     Ok(buffer)
 }
 
+/// 从页面中读取定长或变长字段，同时推进游标。
+///
+/// 所有解码函数都走这一层，避免损坏页面导致越界切片。
 fn take_bytes<'a>(data: &'a [u8], position: &mut usize, len: usize) -> KvResult<&'a [u8]> {
     let end = position
         .checked_add(len)
@@ -90,6 +96,9 @@ fn encode_internal_node(keys: &[Vec<u8>], children: &[u64]) -> KvResult<Vec<u8>>
     finish_page(buf)
 }
 
+/// 编码叶子节点。
+///
+/// 布局为：类型标记、键数量、所有键、所有值、下一叶子页号。
 fn encode_leaf_node(keys: &[Vec<u8>], values: &[Vec<u8>], next: u64) -> KvResult<Vec<u8>> {
     if keys.len() != values.len() {
         return Err(KvError::Internal(
@@ -160,7 +169,9 @@ fn find_key_index(keys: &[Vec<u8>], target: &[u8]) -> usize {
 ///
 /// 叶节点通过 `next` 页号串联，因此范围扫描不需要返回父节点。
 pub struct BPlusTree {
+    /// 底层页面读写接口。
     pub pager: Arc<dyn Pager>,
+    /// 当前根页号。根分裂或根收缩时会更新该值。
     pub root_page_id: AtomicU64,
 }
 
@@ -223,6 +234,8 @@ impl BPlusTree {
             values.insert(idx, value.to_vec());
 
             if keys.len() > MAX_KEYS {
+                // 叶子分裂时把右页第一个键提升给父节点；该键仍保留在右页中，
+                // 这是 B+Tree 与 B-Tree 在叶子层的主要区别。
                 let mid = keys.len() / 2;
                 let right_keys = keys.split_off(mid);
                 let right_vals = values.split_off(mid);
@@ -256,6 +269,7 @@ impl BPlusTree {
                     int_children.insert(insert_idx + 1, new_child_id);
 
                     if int_keys.len() > MAX_KEYS {
+                        // 内部节点分裂时中间键只进入父节点，不留在左右子节点。
                         let mid = int_keys.len() / 2;
                         let promo = int_keys[mid].clone();
                         let right_keys = int_keys.split_off(mid + 1);
@@ -280,6 +294,7 @@ impl BPlusTree {
         }
     }
 
+    /// 查找单个键。
     pub async fn search(&self, key: &[u8]) -> KvResult<Option<Vec<u8>>> {
         let mut page_id = self.root_page_id.load(Ordering::Relaxed);
         loop {
@@ -330,6 +345,9 @@ impl BPlusTree {
         Ok(results)
     }
 
+    /// 删除键。
+    ///
+    /// 当前实现删除叶子记录并处理空根收缩；为保持实现规模可控，未做兄弟节点借位和合并。
     pub async fn delete(&self, key: &[u8]) -> KvResult<bool> {
         let found = self
             .delete_recursive(self.root_page_id.load(Ordering::Relaxed), key)

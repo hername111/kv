@@ -1,4 +1,7 @@
 //! 数据库文件、superblock 和持久化空闲页链表。
+//!
+//! 文件第 0 页是 superblock，保存格式标识、下一可分配页号、空闲页链表头和目录树根页。
+//! 普通页固定为 4 KiB，页号可以直接换算为文件偏移。
 
 use async_trait::async_trait;
 use kv_common::error::{KvError, KvResult};
@@ -113,7 +116,7 @@ impl DiskPager {
                 file.read_exact(&mut page).map_err(KvError::Io)?;
                 current = u64::from_le_bytes(page[0..8].try_into().unwrap());
             }
-            // Vec 尾部对应链表头，使页面分配可以 O(1) 弹出。
+            // 文件中保存的是单向链表头；内存中反转为栈，分配时从 Vec 尾部 O(1) 弹出。
             free_pages.reverse();
             (next_id, free_pages, meta_root)
         };
@@ -174,6 +177,7 @@ impl Pager for DiskPager {
         let mut free_pages = self.free_pages.lock().unwrap();
         if let Some(page_id) = free_pages.pop() {
             drop(free_pages);
+            // 复用页前清零，避免上一次内容被误读为有效节点。
             self.write_page_sync(page_id, &[])?;
             self.write_superblock()?;
             return Ok(page_id);
@@ -213,6 +217,7 @@ impl Pager for DiskPager {
         }
         let previous_head = free_pages.last().copied().unwrap_or(0);
         let mut free_page = vec![0u8; PAGE_SIZE as usize];
+        // 空闲页自身的前 8 字节保存下一空闲页页号，形成可跨进程重启恢复的链表。
         free_page[0..8].copy_from_slice(&previous_head.to_le_bytes());
         self.write_page_sync(page_id, &free_page)?;
         free_pages.push(page_id);

@@ -27,10 +27,10 @@ pub trait StorageEngine: Send + Sync {
     /// 删除指定主键。
     async fn delete(&self, table_id: TableId, key: &[u8], txn_id: u64) -> KvResult<()>;
 
-    /// 创建索引
+    /// 为指定表和列创建索引，并返回索引 ID。
     async fn create_index(&self, table_id: TableId, col_id: ColumnId) -> KvResult<IndexId>;
 
-    /// 通过索引查找
+    /// 通过索引键查找主键列表。
     async fn index_lookup(
         &self,
         index_id: IndexId,
@@ -38,25 +38,27 @@ pub trait StorageEngine: Send + Sync {
         txn_id: u64,
     ) -> KvResult<Vec<Vec<u8>>>;
 
-    /// 持久化表元数据
+    /// 持久化表元数据。
     async fn save_table_meta(&self, _name: &str, _meta: &TableMeta) -> KvResult<()> {
         Ok(())
     }
-    /// 加载所有持久化的表元数据
+
+    /// 加载所有持久化的表元数据。
     async fn load_all_table_meta(&self) -> KvResult<Vec<TableMeta>> {
         Ok(Vec::new())
     }
-    /// 从 catalog 中删除表元数据
+
+    /// 从 catalog 中删除表元数据。
     async fn delete_table_meta(&self, _name: &str) -> KvResult<()> {
         Ok(())
     }
 
-    /// 获取表的 B+Tree root page ID（用于持久化）
+    /// 获取表数据 B+Tree 的根页号。
     async fn get_table_root(&self, _table_id: TableId) -> KvResult<u64> {
         Ok(0)
     }
 
-    /// 用已知 root page ID 恢复表的 B+Tree
+    /// 用已知根页号恢复表数据 B+Tree。
     async fn restore_table(&self, _table_id: TableId, _root_page_id: u64) -> KvResult<()> {
         Ok(())
     }
@@ -81,27 +83,27 @@ pub trait TxnContext {
 /// 存储引擎使用的固定大小页面接口。
 #[async_trait]
 pub trait Pager: Send + Sync {
-    /// 读取指定页（4KB）
+    /// 读取指定 4 KiB 页面。
     async fn read_page(&self, page_id: u64) -> KvResult<Vec<u8>>;
 
-    /// 写入指定页
+    /// 写入指定页面；不足一页时由实现决定是否补零。
     async fn write_page(&self, page_id: u64, data: &[u8]) -> KvResult<()>;
 
-    /// 分配新页，返回页号
+    /// 分配新页并返回页号。
     async fn allocate_page(&self) -> KvResult<u64>;
 
-    /// 释放页
+    /// 释放页，允许后续复用页号。
     async fn free_page(&self, page_id: u64) -> KvResult<()>;
 
-    /// 刷盘
+    /// 将已写入数据刷新到底层介质。
     async fn flush(&self) -> KvResult<()>;
 
-    /// 读取 superblock 中保存的 meta tree root page ID
+    /// 读取 superblock 中保存的目录树根页号。
     async fn get_meta_root(&self) -> KvResult<u64> {
         Ok(0)
     }
 
-    /// 写入 meta tree root page ID 到 superblock
+    /// 将目录树根页号写入 superblock。
     async fn set_meta_root(&self, _root: u64) -> KvResult<()> {
         Ok(())
     }

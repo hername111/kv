@@ -3,28 +3,33 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-#[derive(Debug, Clone)]
 /// 一个键在某次事务中的值或删除标记。
+#[derive(Debug, Clone)]
 pub struct Version {
+    /// 创建该版本的事务编号。
     pub txn_id: u64,
+    /// 删除版本不保存值。
     pub value: Option<Vec<u8>>,
     pub is_deleted: bool,
+    /// 上一个版本的事务编号，用于回退到快照可见版本。
     pub prev_version_txn: Option<u64>,
 }
 
-#[derive(Debug, Clone)]
 /// 按创建顺序保存同一键的多个版本。
+#[derive(Debug, Clone)]
 pub struct VersionChain {
     versions: Vec<Version>,
 }
 
 impl VersionChain {
+    /// 创建空版本链。
     pub fn new() -> Self {
         VersionChain {
             versions: Vec::new(),
         }
     }
 
+    /// 在链尾追加一个新版本。
     pub fn add_version(&mut self, txn_id: u64, value: Option<Vec<u8>>, is_deleted: bool) {
         let prev = self.versions.last().map(|v| v.txn_id);
         self.versions.push(Version {
@@ -69,12 +74,14 @@ pub struct MvccStore {
 }
 
 impl MvccStore {
+    /// 创建空 MVCC 存储。
     pub fn new() -> Self {
         MvccStore {
             chains: Mutex::new(HashMap::new()),
         }
     }
 
+    /// 写入一个键的新版本。
     pub fn write(&self, key: Vec<u8>, value: Vec<u8>, txn_id: u64) {
         let mut chains = self.chains.lock().unwrap();
         chains
@@ -83,6 +90,7 @@ impl MvccStore {
             .add_version(txn_id, Some(value), false);
     }
 
+    /// 写入删除标记。
     pub fn delete(&self, key: Vec<u8>, txn_id: u64) {
         let mut chains = self.chains.lock().unwrap();
         chains
@@ -91,6 +99,7 @@ impl MvccStore {
             .add_version(txn_id, None, true);
     }
 
+    /// 按快照事务号读取可见版本。
     pub fn read(&self, key: &[u8], snapshot_txn_id: u64, active_txns: &[u64]) -> Option<Vec<u8>> {
         let chains = self.chains.lock().unwrap();
         chains.get(key).and_then(|chain| {

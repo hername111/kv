@@ -1,6 +1,9 @@
 //! SQL 抽象语法树与表达式求值。
 use kv_common::types::{ColumnDef, Row, Value};
 
+/// 解析后的 SQL 语句。
+///
+/// 语法树只保留执行所需信息，例如表名、列名、表达式和事务控制语句。
 #[derive(Debug, Clone)]
 pub enum Statement {
     Select {
@@ -42,6 +45,7 @@ pub enum Statement {
     Rollback,
 }
 
+/// SELECT 投影项。
 #[derive(Debug, Clone)]
 pub enum SelectItem {
     Star,
@@ -49,6 +53,7 @@ pub enum SelectItem {
     Alias(String, String),
 }
 
+/// WHERE、SET 和 INSERT VALUES 中使用的表达式。
 #[derive(Debug, Clone)]
 pub enum Expr {
     Column(String),
@@ -119,6 +124,7 @@ fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
     }
 }
 
+/// 二元表达式运算符。
 #[derive(Debug, Clone)]
 pub enum Operator {
     Eq,
@@ -131,12 +137,14 @@ pub enum Operator {
     Or,
 }
 
+/// ORDER BY 子句中的排序项。
 #[derive(Debug, Clone)]
 pub struct OrderBy {
     pub column: String,
     pub ascending: bool,
 }
 
+/// 简化的等值 JOIN 描述。
 #[derive(Debug, Clone)]
 pub struct Join {
     pub table: String,

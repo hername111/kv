@@ -15,6 +15,7 @@ pub struct KvServer {
 }
 
 impl KvServer {
+    /// 创建 TCP 服务实例。
     pub fn new(addr: String) -> Self {
         KvServer {
             addr,
@@ -22,6 +23,7 @@ impl KvServer {
         }
     }
 
+    /// 设置 SQL 命令处理器。
     pub fn with_handler(mut self, handler: Arc<dyn CommandHandler>) -> Self {
         self.handler = Some(handler);
         self
